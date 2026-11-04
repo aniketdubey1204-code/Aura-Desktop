@@ -153,6 +153,8 @@ class YtWebLogin {
   /// app — the "Add account opens in background" report), so the
   /// first attempt is awaited inline and two more are re-asserted
   /// shortly after. All guarded by [_expectVisible].
+  static Future<void> foreground(Webview w) => _foreground(w);
+
   static Future<void> _foreground(Webview w) async {
     _expectVisible = true;
     if (Platform.isLinux) {
@@ -251,10 +253,12 @@ class YtWebLogin {
     if (t.contains('disallowed_useragent')) return true;
     if (t.contains('this browser or app')) return true;
     if (t.contains('try using a different browser')) return true;
-    // "Couldn't sign you in" only counts when it is the block page
-    // (the apostrophe is either ASCII or the typographic variant).
-    if (t.contains("couldn't sign you in") ||
-        t.contains('couldn’t sign you in')) {
+    if ((t.contains("couldn't sign you in") ||
+            t.contains('couldn’t sign you in')) &&
+        (t.contains('secure') ||
+            t.contains('different browser') ||
+            t.contains('browser or app') ||
+            t.contains('disallowed'))) {
       return true;
     }
     return false;
@@ -349,7 +353,7 @@ class YtWebLogin {
 
   /// Title must match kYtWindowTitle in linux/runner/yt_webview_guard.cc
   /// (ASCII-only: compared byte-wise in native code).
-  static const _windowTitle = 'LastWave YouTube Sign In';
+  static const _windowTitle = 'Aura YouTube Sign In';
 
   /// Appended to the system WebView's default UA before the first
   /// navigation. On macOS the plugin hosts a WKWebView whose default
@@ -358,53 +362,62 @@ class YtWebLogin {
   /// `customUserAgent = defaultUA + suffix`, so the leading space
   /// matters. Called once per window creation; the cached window
   /// keeps it for reuse.
-  static const _macChromeSuffix = ' Chrome/131.0.0.0 Safari/537.36';
+  static const _chromeSuffix = ' Chrome/131.0.0.0 Safari/537.36';
 
-  /// Document-start compatibility shim for macOS only.
-  ///
-  /// Google's `disallowed_useragent` block keys off the embedded
-  /// browser fingerprint (WKWebView reports no `navigator.userAgentData`
-  /// and no `window.chrome`). This shim presents a coherent desktop
-  /// Chrome surface before any page script runs. It is a best-effort
-  /// compatibility measure — Google can change the check at any time,
-  /// and when it fails the flow fails FAST into the paste path instead
-  /// of pretending the browser can be fixed.
-  static const _macCompatShim = r'''
+  /// Document-start compatibility shim for embedded browsers on Windows, macOS, Linux.
+  /// Masks embedded WebView markers, strips window.chrome.webview, and sets
+  /// standard Chrome userAgent and userAgentData before any Google script runs.
+  static const _browserCompatShim = r'''
 (function () {
   try {
-    var ua = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) '
-      + 'AppleWebKit/537.36 (KHTML, like Gecko) '
-      + 'Chrome/131.0.0.0 Safari/537.36';
-    Object.defineProperty(navigator, 'userAgent', { get: function () { return ua; } });
-    if (!navigator.userAgentData) {
+    var isMac = (navigator.platform && navigator.platform.indexOf('Mac') >= 0);
+    var ua = isMac
+      ? 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
+      : 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+
+    try {
+      Object.defineProperty(navigator, 'userAgent', { get: function () { return ua; } });
+      Object.defineProperty(navigator, 'appVersion', { get: function () { return ua.replace('Mozilla/', ''); } });
+    } catch (e) {}
+
+    // Remove Edge WebView2 signature
+    try {
+      if (window.chrome) {
+        delete window.chrome.webview;
+      } else {
+        window.chrome = { runtime: {} };
+      }
+    } catch (e) {}
+
+    try {
+      Object.defineProperty(navigator, 'webdriver', { get: function () { return undefined; } });
+    } catch (e) {}
+
+    try {
       var brands = [
         { brand: 'Chromium', version: '131' },
         { brand: 'Google Chrome', version: '131' },
         { brand: 'Not_A Brand', version: '24' }
       ];
-      Object.defineProperty(navigator, 'userAgentData', {
-        get: function () {
-          return {
+      var platform = isMac ? 'macOS' : 'Windows';
+      var uad = {
+        brands: brands,
+        mobile: false,
+        platform: platform,
+        getHighEntropyValues: function () {
+          return Promise.resolve({
             brands: brands,
             mobile: false,
-            platform: 'macOS',
-            getHighEntropyValues: function () {
-              return Promise.resolve({
-                brands: brands,
-                mobile: false,
-                platform: 'macOS',
-                platformVersion: '14.0.0',
-                architecture: 'arm',
-                bitness: '64',
-                uaFullVersion: '131.0.0.0'
-              });
-            }
-          };
+            platform: platform,
+            platformVersion: isMac ? '14.0.0' : '15.0.0',
+            architecture: isMac ? 'arm' : 'x86',
+            bitness: '64',
+            uaFullVersion: '131.0.0.0'
+          });
         }
-      });
-    }
-    if (!window.chrome) { window.chrome = { runtime: {} }; }
-    Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+      };
+      Object.defineProperty(navigator, 'userAgentData', { get: function () { return uad; } });
+    } catch (e) {}
   } catch (e) {}
 })();
 ''';
@@ -452,14 +465,12 @@ class YtWebLogin {
         ),
       );
       _cachedWindow = w;
-      if (Platform.isMacOS) {
-        try {
-          w.addScriptToExecuteOnDocumentCreated(_macCompatShim);
-        } catch (_) {}
-        try {
-          await w.setApplicationNameForUserAgent(_macChromeSuffix);
-        } catch (_) {}
-      }
+      try {
+        w.addScriptToExecuteOnDocumentCreated(_browserCompatShim);
+      } catch (_) {}
+      try {
+        await w.setApplicationNameForUserAgent(_chromeSuffix);
+      } catch (_) {}
       // If the window ever really dies, drop the cache so the next
       // sign-in creates a fresh window instead of talking to a dead one.
       unawaited(w.onClose.then((_) {

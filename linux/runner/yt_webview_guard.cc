@@ -6,9 +6,9 @@
 
 // Must match CreateConfiguration(title:) in yt_web_login.dart (ASCII-only:
 // the title is compared byte-wise here).
-static constexpr const char* kYtWindowTitle = "LastWave YouTube Sign In";
+static constexpr const char* kYtWindowTitle = "Aura YouTube Sign In";
 // Must match CreateConfiguration(title:) in potoken_engine.dart.
-static constexpr const char* kBotGuardTitle = "LastWave BotGuard";
+static constexpr const char* kBotGuardTitle = "Aura BotGuard";
 // Marker so the delete-event blocker is attached exactly once per window.
 static constexpr const char* kArmedKey = "lastwave-yt-guarded";
 

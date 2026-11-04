@@ -60,7 +60,7 @@ void main() {
     );
     // Typographic apostrophe variant.
     expect(
-      YtWebLogin.isBrowserBlockedPage('Couldn’t sign you in'),
+      YtWebLogin.isBrowserBlockedPage('Couldn’t sign you in\nThis browser or app may not be secure'),
       isTrue,
     );
     // Ordinary pages must not be mistaken for the block.

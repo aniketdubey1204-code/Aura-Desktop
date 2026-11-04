@@ -14,12 +14,12 @@ import '../theme/tokens.dart';
 /// session token before anything says "connected".
 
 /// Route #1 — sign in inside the system WebView.
-Future<void> spotifyConnectWithWebView(
+Future<bool> spotifyConnectWithWebView(
   BuildContext context,
   WidgetRef ref,
 ) async {
   final cookie = await SpotifyWebLogin.signIn();
-  if (!context.mounted) return;
+  if (!context.mounted) return false;
   if (cookie == null) {
     switch (SpotifyWebLogin.lastFailure) {
       case SpotifySignInFailure.unavailable:
@@ -39,16 +39,16 @@ Future<void> spotifyConnectWithWebView(
       case SpotifySignInFailure.none:
         break; // cancelled by the user
     }
-    return;
+    return false;
   }
-  await _finish(context, ref, cookie);
+  return await _finish(context, ref, cookie);
 }
 
 /// Route #2 (recommended) — sign in with the user's normal browser, where
 /// Google / Facebook / Apple logins and Spotify's captcha work, then paste
 /// the `sp_dc` cookie. Embedded browsers are refused by Google and often
 /// fail Spotify's captcha, so this is the dependable path.
-Future<void> spotifyConnectViaBrowser(
+Future<bool> spotifyConnectViaBrowser(
   BuildContext context,
   WidgetRef ref,
 ) async {
@@ -56,12 +56,12 @@ Future<void> spotifyConnectViaBrowser(
     Uri.parse('https://accounts.spotify.com/login'),
     mode: LaunchMode.externalApplication,
   );
-  if (!context.mounted) return;
-  await spotifyConnectWithCookie(context, ref);
+  if (!context.mounted) return false;
+  return await spotifyConnectWithCookie(context, ref);
 }
 
 /// Paste the `sp_dc` cookie from the user's own browser.
-Future<void> spotifyConnectWithCookie(
+Future<bool> spotifyConnectWithCookie(
   BuildContext context,
   WidgetRef ref,
 ) async {
@@ -108,16 +108,16 @@ Future<void> spotifyConnectWithCookie(
     ),
   );
   controller.dispose();
-  if (value == null || value.trim().isEmpty) return;
-  if (!context.mounted) return;
-  await _finish(context, ref, value);
+  if (value == null || value.trim().isEmpty) return false;
+  if (!context.mounted) return false;
+  return await _finish(context, ref, value);
 }
 
-Future<void> _finish(BuildContext context, WidgetRef ref, String cookie) async {
+Future<bool> _finish(BuildContext context, WidgetRef ref, String cookie) async {
   final auth = ref.read(spotifyAuthProvider);
   final result = await auth.connectWithSpDc(cookie);
   ref.invalidate(spotifyPlaylistsProvider);
-  if (!context.mounted) return;
+  if (!context.mounted) return false;
   switch (result) {
     case SpotifySessionCheck.ok:
       await _notice(
@@ -126,6 +126,7 @@ Future<void> _finish(BuildContext context, WidgetRef ref, String cookie) async {
         'Your Spotify playlists now appear under Playlists, and Canvas can '
             'use your session.',
       );
+      return true;
     case SpotifySessionCheck.refused:
       await _notice(
         context,
@@ -134,14 +135,17 @@ Future<void> _finish(BuildContext context, WidgetRef ref, String cookie) async {
             'session (expired or ended). Sign in again, or paste a fresh '
             'sp_dc.',
       );
+      return false;
     case SpotifySessionCheck.unreachable:
       await _notice(
         context,
         'Could not reach Spotify',
         'Check your connection and try again.',
       );
+      return false;
     case SpotifySessionCheck.missing:
       await _notice(context, 'No cookie', 'Nothing was entered.');
+      return false;
   }
 }
 

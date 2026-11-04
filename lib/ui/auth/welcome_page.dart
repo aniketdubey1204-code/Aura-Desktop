@@ -5,42 +5,116 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:window_manager/window_manager.dart';
 
+import '../../app/accessibility.dart';
 import '../../core/storage/prefs.dart';
 import '../../features/home/home_providers.dart';
+import '../../features/innertube/yt_auth_actions.dart';
 import '../../features/lastfm/auth_repository.dart';
-import '../../app/accessibility.dart';
 import '../components/buttons.dart';
 import '../components/inputs.dart';
-import 'lastfm_key_guide.dart';
+import '../settings/spotify_connect.dart';
 import '../theme/tokens.dart';
 import '../theme/wave_icons.dart';
+import 'lastfm_key_guide.dart';
 
-const _githubUrl =
-    'https://github.com/aniketdubey1204-code/LastWave-Desktop';
+const _githubUrl = 'https://github.com/aniketdubey1204-code/LastWave-Desktop';
 
-/// Mandatory Last.fm entry screen.
-///
-/// Rendered OUTSIDE the main shell: when there is no valid stored
-/// session, this is the entire application — no Home, no player, no
-/// navigation behind it. Authentication is the only way in; the
-/// GitHub star action is strictly optional and secondary.
+enum _WelcomeBusyAction { none, ytWeb, ytCookie, spotify, guest, lastfm }
+
+/// Entry screen for Aura: sign in with YouTube Music, connect Spotify,
+/// continue as guest, or connect Last.fm.
 class WaveWelcomePage extends ConsumerStatefulWidget {
   const WaveWelcomePage({super.key});
 
   @override
-  ConsumerState<WaveWelcomePage> createState() =>
-      _WaveWelcomePageState();
+  ConsumerState<WaveWelcomePage> createState() => _WaveWelcomePageState();
 }
 
-class _WaveWelcomePageState
-    extends ConsumerState<WaveWelcomePage> {
+class _WaveWelcomePageState extends ConsumerState<WaveWelcomePage> {
   WebAuthHandshake? _handshake;
   bool _busy = false;
+  _WelcomeBusyAction _busyAction = _WelcomeBusyAction.none;
   String? _error;
+
+  Future<void> _signInWithYouTube() async {
+    setState(() {
+      _busy = true;
+      _busyAction = _WelcomeBusyAction.ytWeb;
+      _error = null;
+    });
+    try {
+      final ok = await ytWebSignIn(context, ref, showSuccessDialog: false);
+      if (ok) {
+        await ref.read(authRepositoryProvider.notifier).enterGuestMode();
+        ref.invalidate(feedProvider);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = 'Could not sign in to YouTube Music: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _busyAction = _WelcomeBusyAction.none;
+        });
+      }
+    }
+  }
+
+  Future<void> _connectWithCookies() async {
+    setState(() {
+      _busy = true;
+      _busyAction = _WelcomeBusyAction.ytCookie;
+      _error = null;
+    });
+    try {
+      final ok = await ytConnectWithCookies(context, ref, showSuccessDialog: false);
+      if (ok) {
+        await ref.read(authRepositoryProvider.notifier).enterGuestMode();
+        ref.invalidate(feedProvider);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = 'Could not connect cookies: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _busyAction = _WelcomeBusyAction.none;
+        });
+      }
+    }
+  }
+
+  Future<void> _connectSpotify() async {
+    setState(() {
+      _busy = true;
+      _busyAction = _WelcomeBusyAction.spotify;
+      _error = null;
+    });
+    try {
+      final ok = await spotifyConnectWithWebView(context, ref);
+      if (ok) {
+        await ref.read(authRepositoryProvider.notifier).enterGuestMode();
+        ref.invalidate(feedProvider);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = 'Could not connect Spotify: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _busyAction = _WelcomeBusyAction.none;
+        });
+      }
+    }
+  }
 
   Future<void> _beginWebAuth() async {
     setState(() {
       _busy = true;
+      _busyAction = _WelcomeBusyAction.lastfm;
       _error = null;
     });
     try {
@@ -51,14 +125,13 @@ class _WaveWelcomePageState
       setState(() => _handshake = handshake);
       AppAccessibility.announce(
         context,
-        'Opening Last.fm in your browser. Approve LastWave there, then '
+        'Opening Last.fm in your browser. Approve Aura there, then '
         'come back and press "I\'ve approved - finish sign-in".',
       );
       final uri = Uri.parse(handshake.url);
       try {
         if (await canLaunchUrl(uri)) {
-          await launchUrl(uri,
-              mode: LaunchMode.externalApplication);
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
         }
       } catch (_) {}
     } catch (e) {
@@ -66,7 +139,12 @@ class _WaveWelcomePageState
       setState(() => _error =
           'Could not reach Last.fm. Check your connection and retry.');
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _busyAction = _WelcomeBusyAction.none;
+        });
+      }
     }
   }
 
@@ -75,38 +153,47 @@ class _WaveWelcomePageState
     if (handshake == null) return;
     setState(() {
       _busy = true;
+      _busyAction = _WelcomeBusyAction.lastfm;
       _error = null;
     });
     try {
       await ref
           .read(authRepositoryProvider.notifier)
           .completeWebAuth(handshake.token);
-      // Personalization loads lazily, but refresh anything already
-      // resolved so Home opens with this account's taste.
       ref.invalidate(feedProvider);
-      // No manual navigation: the auth gate redirect enters /home.
     } catch (e) {
       if (!mounted) return;
       setState(() => _error =
           'Not approved yet — approve Aura in the browser, then retry.');
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _busyAction = _WelcomeBusyAction.none;
+        });
+      }
     }
   }
 
   Future<void> _enterGuest() async {
     setState(() {
       _busy = true;
+      _busyAction = _WelcomeBusyAction.guest;
       _error = null;
     });
     try {
       await ref.read(authRepositoryProvider.notifier).enterGuestMode();
-      // No manual navigation: the auth gate redirect enters /home.
+      ref.invalidate(feedProvider);
     } catch (e) {
       if (!mounted) return;
       setState(() => _error = 'Could not continue as guest. Retry.');
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _busyAction = _WelcomeBusyAction.none;
+        });
+      }
     }
   }
 
@@ -114,8 +201,7 @@ class _WaveWelcomePageState
     final uri = Uri.parse(_githubUrl);
     try {
       if (await canLaunchUrl(uri)) {
-        await launchUrl(uri,
-            mode: LaunchMode.externalApplication);
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
       }
     } catch (_) {}
   }
@@ -144,12 +230,15 @@ class _WaveWelcomePageState
               child: _CenterScroll(
                 child: Center(
                   child: ConstrainedBox(
-                    constraints:
-                        const BoxConstraints(maxWidth: 460),
+                    constraints: const BoxConstraints(maxWidth: 460),
                     child: _AuthPanel(
                       handshake: _handshake,
                       busy: _busy,
+                      busyAction: _busyAction,
                       error: _error,
+                      onYtSignIn: _signInWithYouTube,
+                      onYtCookies: _connectWithCookies,
+                      onSpotify: _connectSpotify,
                       onConnect: _beginWebAuth,
                       onFinish: _completeWebAuth,
                       onSkip: _enterGuest,
@@ -166,12 +255,6 @@ class _WaveWelcomePageState
   }
 }
 
-/// Scroll container that keeps centered content centered: on tall
-/// windows the child fills the viewport (so `MainAxisAlignment.center`
-/// works); on short windows it scrolls instead of overflowing. Used by
-/// both halves of the wide welcome layout — the auth panel grows with
-/// the API-keys form, error bar, and handshake rows, and the brand
-/// column is itself ~590px tall.
 class _CenterScroll extends StatelessWidget {
   final Widget child;
   const _CenterScroll({required this.child});
@@ -181,8 +264,7 @@ class _CenterScroll extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) => SingleChildScrollView(
         child: ConstrainedBox(
-          constraints:
-              BoxConstraints(minHeight: constraints.maxHeight),
+          constraints: BoxConstraints(minHeight: constraints.maxHeight),
           child: child,
         ),
       ),
@@ -190,13 +272,6 @@ class _CenterScroll extends StatelessWidget {
   }
 }
 
-/// Native window chrome for the chromeless window: drag region +
-/// minimize / maximize / close. The main title bar lives in the shell,
-/// which is never rendered here.
-///
-/// macOS is the exception: `TitleBarStyle.hidden` hides the title bar
-/// but keeps the native traffic lights, so the custom buttons are
-/// omitted there and the brand label is inset past them.
 class _WelcomeChrome extends StatelessWidget {
   const _WelcomeChrome();
 
@@ -207,10 +282,6 @@ class _WelcomeChrome extends StatelessWidget {
         height: WaveDensity.titleBar,
         child: Row(
           children: [
-            // macOS keeps the native traffic lights above the chromeless
-            // window (`TitleBarStyle.hidden` hides the bar, not the
-            // buttons), so reserve their corner instead of drawing a
-            // second, non-native set of controls.
             SizedBox(width: Platform.isMacOS ? 84 : 16),
             Text(
               'AURA',
@@ -289,42 +360,41 @@ class _ChromeBtnState extends State<_ChromeBtn> {
       label: widget.tooltip,
       onTap: widget.onTap,
       child: LWTooltip(
-      message: widget.tooltip,
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
-        onEnter: (_) => setState(() => _hover = true),
-        onExit: (_) => setState(() => _hover = false),
-        child: GestureDetector(
-          onTap: widget.onTap,
-          child: AnimatedContainer(
-            duration: waveMotion(context, WaveMotion.fast),
-            width: 46,
-            height: WaveDensity.titleBar,
-            color: _hover
-                ? (widget.danger
-                    ? WaveColors.danger
+        message: widget.tooltip,
+        child: MouseRegion(
+          cursor: SystemMouseCursors.click,
+          onEnter: (_) => setState(() => _hover = true),
+          onExit: (_) => setState(() => _hover = false),
+          child: GestureDetector(
+            onTap: widget.onTap,
+            child: AnimatedContainer(
+              duration: waveMotion(context, WaveMotion.fast),
+              width: 46,
+              height: WaveDensity.titleBar,
+              color: _hover
+                  ? (widget.danger
+                      ? WaveColors.danger
+                      : (dark
+                          ? Colors.white.withValues(alpha: 0.07)
+                          : Colors.black.withValues(alpha: 0.06)))
+                  : Colors.transparent,
+              child: Icon(
+                widget.icon,
+                size: widget.iconSize,
+                color: _hover && widget.danger
+                    ? Colors.white
                     : (dark
-                        ? Colors.white.withValues(alpha: 0.07)
-                        : Colors.black.withValues(alpha: 0.06)))
-                : Colors.transparent,
-            child: Icon(
-              widget.icon,
-              size: widget.iconSize,
-              color: _hover && widget.danger
-                  ? Colors.white
-                  : (dark
-                      ? WaveColors.textSecondary
-                      : WaveColors.lightTextSecondary),
+                        ? WaveColors.textSecondary
+                        : WaveColors.lightTextSecondary),
+              ),
             ),
           ),
         ),
       ),
-    ),
     );
   }
 }
 
-/// Static equalizer motif — identity, not a live visualizer.
 class _EqualizerRow extends StatelessWidget {
   const _EqualizerRow();
 
@@ -336,8 +406,6 @@ class _EqualizerRow extends StatelessWidget {
       60.0, 32.0, 46.0, 20.0, 38.0, 54.0,
     ];
     final accent = waveAccent(context);
-    // Bars share the full width evenly (flex gaps) so the motif lines
-    // up with the buttons above and below it.
     return SizedBox(
       height: 72,
       child: Row(
@@ -352,8 +420,7 @@ class _EqualizerRow extends StatelessWidget {
                 borderRadius: WaveRadius.tinyRadius,
                 color: i % 5 == 2
                     ? accent
-                    : accent.withValues(
-                        alpha: 0.25 + (i % 5) * 0.1),
+                    : accent.withValues(alpha: 0.25 + (i % 5) * 0.1),
               ),
             ),
         ],
@@ -362,21 +429,27 @@ class _EqualizerRow extends StatelessWidget {
   }
 }
 
-/// Centered auth column: mosaic, product name, tagline, a primary guest
-/// entry, Last.fm as the optional secondary connect, and the optional
-/// GitHub star action.
 class _AuthPanel extends ConsumerStatefulWidget {
   final WebAuthHandshake? handshake;
   final bool busy;
+  final _WelcomeBusyAction busyAction;
   final String? error;
+  final VoidCallback onYtSignIn;
+  final VoidCallback onYtCookies;
+  final VoidCallback onSpotify;
   final VoidCallback onConnect;
   final VoidCallback onFinish;
   final VoidCallback onSkip;
   final VoidCallback onGitHub;
+
   const _AuthPanel({
     required this.handshake,
     required this.busy,
+    required this.busyAction,
     required this.error,
+    required this.onYtSignIn,
+    required this.onYtCookies,
+    required this.onSpotify,
     required this.onConnect,
     required this.onFinish,
     required this.onSkip,
@@ -388,7 +461,6 @@ class _AuthPanel extends ConsumerStatefulWidget {
 }
 
 class _AuthPanelState extends ConsumerState<_AuthPanel> {
-  /// Last.fm keys are only asked for once the user opts into connecting.
   bool _wantsLastFm = false;
 
   @override
@@ -397,27 +469,27 @@ class _AuthPanelState extends ConsumerState<_AuthPanel> {
     final accent = waveAccent(context);
     final handshake = widget.handshake;
     final busy = widget.busy;
+    final busyAction = widget.busyAction;
     final error = widget.error;
     final tertiary =
         dark ? WaveColors.textTertiary : WaveColors.lightTextTertiary;
-    // Subscribe to auth transitions (signingIn -> signedOut on a
-    // successful key save) so `configured` re-evaluates: Prefs itself
-    // never notifies, and without this the panel stays stale forever.
+
     ref.watch(authRepositoryProvider.select((s) => s.status));
     final configured = ref.watch(prefsProvider).isLastFmConfigured;
     final showKeys = !configured && _wantsLastFm;
+
     return Padding(
-      padding: const EdgeInsets.fromLTRB(36, 32, 36, 32),
+      padding: const EdgeInsets.fromLTRB(36, 28, 36, 28),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           const _WelcomeLogo(),
-          const SizedBox(height: 28),
+          const SizedBox(height: 20),
           Text(
             'Aura',
             textAlign: TextAlign.center,
-            style: WaveType.pageTitle.copyWith(fontSize: 40),
+            style: WaveType.pageTitle.copyWith(fontSize: 38),
           ),
           const SizedBox(height: 6),
           Text(
@@ -428,7 +500,7 @@ class _AuthPanelState extends ConsumerState<_AuthPanel> {
               color: accent,
             ),
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 12),
           Text(
             'Stream YouTube Music and lossless FLAC up to 24-bit / '
             '192 kHz, with synced lyrics and offline downloads.',
@@ -439,7 +511,7 @@ class _AuthPanelState extends ConsumerState<_AuthPanel> {
                   : WaveColors.lightTextSecondary,
             ),
           ),
-          const SizedBox(height: 28),
+          const SizedBox(height: 24),
           if (error != null) ...[
             Semantics(
               liveRegion: true,
@@ -447,25 +519,25 @@ class _AuthPanelState extends ConsumerState<_AuthPanel> {
               label: 'Error: $error',
               child: ExcludeSemantics(
                 child: InfoBar(
-                  title: const Text('Could not connect'),
+                  title: const Text('Could not sign in'),
                   content: Text(error),
                   severity: InfoBarSeverity.error,
                 ),
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 14),
           ],
+
+          // 1. YouTube Music primary login
           WaveFilledButton(
-            // Something must hold focus on first paint, or a screen
-            // reader opens on an empty window with nothing to read.
             autofocus: handshake == null && !_wantsLastFm,
-            onPressed: busy ? null : widget.onSkip,
+            onPressed: busy ? null : widget.onYtSignIn,
             style: const ButtonStyle(
               padding: WidgetStatePropertyAll(
                 EdgeInsets.symmetric(vertical: 13),
               ),
             ),
-            child: busy && handshake == null && !_wantsLastFm
+            child: busy && busyAction == _WelcomeBusyAction.ytWeb
                 ? const Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     mainAxisSize: MainAxisSize.min,
@@ -476,104 +548,208 @@ class _AuthPanelState extends ConsumerState<_AuthPanel> {
                         child: ProgressRing(strokeWidth: 2),
                       ),
                       SizedBox(width: 8),
-                      Text('Getting ready...'),
+                      Text('Opening sign-in window...'),
                     ],
                   )
-                : const Text('Continue as guest'),
+                : const Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(FluentIcons.play_solid, size: 14),
+                      SizedBox(width: 8),
+                      Text('Login with YouTube Music'),
+                    ],
+                  ),
           ),
-          const SizedBox(height: 8),
-          Text(
-            'Browse, stream and download right away. You can connect '
-            'Last.fm later in Settings.',
-            textAlign: TextAlign.center,
-            style: WaveType.meta.copyWith(color: tertiary),
+          const SizedBox(height: 10),
+
+          // 2. Cookie login + Spotify connect row
+          Row(
+            children: [
+              Expanded(
+                child: WaveButton(
+                  onPressed: busy ? null : widget.onYtCookies,
+                  style: const ButtonStyle(
+                    padding: WidgetStatePropertyAll(
+                      EdgeInsets.symmetric(vertical: 10),
+                    ),
+                  ),
+                  child: const Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(FluentIcons.code, size: 13),
+                      SizedBox(width: 6),
+                      Text('Cookie Login'),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: WaveButton(
+                  onPressed: busy ? null : widget.onSpotify,
+                  style: const ButtonStyle(
+                    padding: WidgetStatePropertyAll(
+                      EdgeInsets.symmetric(vertical: 10),
+                    ),
+                  ),
+                  child: busy && busyAction == _WelcomeBusyAction.spotify
+                      ? const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            SizedBox(
+                              width: 13,
+                              height: 13,
+                              child: ProgressRing(strokeWidth: 2),
+                            ),
+                            SizedBox(width: 6),
+                            Text('Connecting...'),
+                          ],
+                        )
+                      : const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(FluentIcons.music_in_collection, size: 13),
+                            SizedBox(width: 6),
+                            Text('Connect Spotify'),
+                          ],
+                        ),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 20),
-          if (showKeys) ...[
-            const _ApiKeyForm(),
-            const SizedBox(height: 12),
-          ],
+          const SizedBox(height: 12),
+
+          // 3. Guest Mode
           WaveButton(
-            onPressed: busy
-                ? null
-                : (!configured && !_wantsLastFm)
-                    ? () => setState(() => _wantsLastFm = true)
-                    : (!configured ? null : widget.onConnect),
+            onPressed: busy ? null : widget.onSkip,
             style: const ButtonStyle(
               padding: WidgetStatePropertyAll(
                 EdgeInsets.symmetric(vertical: 11),
               ),
             ),
-            child: busy && handshake == null && _wantsLastFm
+            child: busy && busyAction == _WelcomeBusyAction.guest
                 ? const Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       SizedBox(
-                        width: 15,
-                        height: 15,
+                        width: 14,
+                        height: 14,
                         child: ProgressRing(strokeWidth: 2),
                       ),
                       SizedBox(width: 8),
-                      Text('Contacting Last.fm...'),
+                      Text('Entering Aura...'),
                     ],
                   )
-                : Text(
-                    handshake == null
-                        ? 'Connect with Last.fm'
-                        : 'Restart approval',
-                  ),
+                : const Text('Continue as guest'),
           ),
-          if (handshake != null) ...[
-            const SizedBox(height: 10),
-            WaveButton(
-              // Mounts when the browser approval starts: focus lands here,
-              // so coming back from the browser reads the next step.
-              autofocus: true,
-              onPressed: busy ? null : widget.onFinish,
-              style: const ButtonStyle(
-                padding: WidgetStatePropertyAll(
-                  EdgeInsets.symmetric(vertical: 11),
-                ),
-              ),
-              child: busy
-                  ? const Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        SizedBox(
-                          width: 15,
-                          height: 15,
-                          child: ProgressRing(strokeWidth: 2),
-                        ),
-                        SizedBox(width: 8),
-                        Text('Confirming...'),
-                      ],
-                    )
-                  : const Text("I've approved - finish sign-in"),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Approve Aura in the browser tab that just opened, '
-              'then finish sign-in here.',
-              semanticsLabel: 'Approve Aura in the browser tab that '
-                  'just opened, then finish sign-in here.',
-              style: WaveType.meta.copyWith(color: tertiary),
-              textAlign: TextAlign.center,
-            ),
-          ],
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           Text(
-            'Scrobbling, stats and taste sync. Authentication opens '
-            'through Last.fm, Aura never asks for your password.',
-            style: WaveType.meta.copyWith(color: tertiary),
+            'Browse, stream and download right away without an account.',
             textAlign: TextAlign.center,
+            style: WaveType.meta.copyWith(color: tertiary),
           ),
-          const SizedBox(height: 28),
-          const ExcludeSemantics(child: _EqualizerRow()),
+          const SizedBox(height: 18),
+
+          // 4. Optional Last.fm expander
+          Expander(
+            header: Text(
+              'Connect Last.fm (Optional)',
+              style: WaveType.meta.copyWith(
+                fontWeight: FontWeight.w600,
+                color: waveTextPrimary(context),
+              ),
+            ),
+            content: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Scrobble tracks and sync listening stats with Last.fm.',
+                  style: WaveType.meta.copyWith(color: tertiary),
+                ),
+                const SizedBox(height: 10),
+                if (showKeys) ...[
+                  const _ApiKeyForm(),
+                  const SizedBox(height: 10),
+                ],
+                WaveButton(
+                  onPressed: busy
+                      ? null
+                      : (!configured && !_wantsLastFm)
+                          ? () => setState(() => _wantsLastFm = true)
+                          : (!configured ? null : widget.onConnect),
+                  style: const ButtonStyle(
+                    padding: WidgetStatePropertyAll(
+                      EdgeInsets.symmetric(vertical: 10),
+                    ),
+                  ),
+                  child: busy && handshake == null && _wantsLastFm
+                      ? const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: ProgressRing(strokeWidth: 2),
+                            ),
+                            SizedBox(width: 8),
+                            Text('Contacting Last.fm...'),
+                          ],
+                        )
+                      : Text(
+                          handshake == null
+                              ? 'Connect with Last.fm'
+                              : 'Restart approval',
+                        ),
+                ),
+                if (handshake != null) ...[
+                  const SizedBox(height: 8),
+                  WaveButton(
+                    autofocus: true,
+                    onPressed: busy ? null : widget.onFinish,
+                    style: const ButtonStyle(
+                      padding: WidgetStatePropertyAll(
+                        EdgeInsets.symmetric(vertical: 10),
+                      ),
+                    ),
+                    child: busy
+                        ? const Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: ProgressRing(strokeWidth: 2),
+                              ),
+                              SizedBox(width: 8),
+                              Text('Confirming...'),
+                            ],
+                          )
+                        : const Text("I've approved - finish sign-in"),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Approve Aura in the browser tab that just opened, '
+                    'then finish sign-in here.',
+                    style: WaveType.meta.copyWith(color: tertiary),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ],
+            ),
+          ),
+
           const SizedBox(height: 24),
+          const ExcludeSemantics(child: _EqualizerRow()),
+          const SizedBox(height: 20),
           Container(height: 1, color: waveDivider(context)),
-          const SizedBox(height: 14),
+          const SizedBox(height: 12),
           WaveLink(
             onPressed: widget.onGitHub,
             child: const Row(
@@ -592,13 +768,6 @@ class _AuthPanelState extends ConsumerState<_AuthPanel> {
   }
 }
 
-
-/// BYOK form: the user's own Last.fm API key + shared secret.
-///
-/// Shown on the welcome screen until keys are saved (Settings holds
-/// the same editor for later changes). Validated with a signed
-/// `auth.getToken` call before persisting; the parent rebuilds into
-/// the connect flow on success.
 class _ApiKeyForm extends ConsumerStatefulWidget {
   const _ApiKeyForm();
   @override
@@ -641,14 +810,10 @@ class _ApiKeyFormState extends ConsumerState<_ApiKeyForm> {
   @override
   Widget build(BuildContext context) {
     final dark = waveIsDark(context);
-    // Same subscription as the parent panel: a successful save flips
-    // auth state, which rebuilds us so the success state below shows.
     ref.watch(authRepositoryProvider.select((s) => s.status));
     final saved = ref.watch(prefsProvider).isLastFmConfigured;
-    _key ??= TextEditingController(
-        text: ref.read(prefsProvider).lastFmApiKey);
-    _secret ??= TextEditingController(
-        text: ref.read(prefsProvider).lastFmApiSecret);
+    _key ??= TextEditingController(text: ref.read(prefsProvider).lastFmApiKey);
+    _secret ??= TextEditingController(text: ref.read(prefsProvider).lastFmApiSecret);
     if (saved && !_busy) {
       return Container(
         padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
@@ -664,9 +829,9 @@ class _ApiKeyFormState extends ConsumerState<_ApiKeyForm> {
               child: Semantics(
                 liveRegion: true,
                 child: Text(
-                'Keys validated — connect with Last.fm below.',
-                style: WaveType.meta.copyWith(color: Colors.green),
-              ),
+                  'Keys validated — connect with Last.fm below.',
+                  style: WaveType.meta.copyWith(color: Colors.green),
+                ),
               ),
             ),
           ],
@@ -683,7 +848,6 @@ class _ApiKeyFormState extends ConsumerState<_ApiKeyForm> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const Text('Last.fm API keys', style: WaveType.label),
-          const SizedBox(height: 2),
           const SizedBox(height: 4),
           const LastFmKeyGuide(),
           const SizedBox(height: 8),
@@ -740,12 +904,9 @@ class _ApiKeyFormState extends ConsumerState<_ApiKeyForm> {
           ),
           const SizedBox(height: 6),
           Text(
-            'Aura ships with no keys of its own — these stay on '
-            'this device.',
+            'Aura ships with no keys of its own — these stay on this device.',
             style: WaveType.meta.copyWith(
-              color: dark
-                  ? WaveColors.textTertiary
-                  : WaveColors.lightTextTertiary,
+              color: dark ? WaveColors.textTertiary : WaveColors.lightTextTertiary,
             ),
             textAlign: TextAlign.center,
           ),
@@ -755,8 +916,6 @@ class _ApiKeyFormState extends ConsumerState<_ApiKeyForm> {
   }
 }
 
-/// App logo above the title. Bundled asset, so it never depends on
-/// the network.
 class _WelcomeLogo extends StatelessWidget {
   const _WelcomeLogo();
 

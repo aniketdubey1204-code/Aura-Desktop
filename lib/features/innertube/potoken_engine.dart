@@ -266,7 +266,7 @@ class PoTokenEngine {
       final profileFolder = await webviewUserDataFolder('botguard');
       webview = await WebviewWindow.create(
         configuration: CreateConfiguration(
-          title: 'LastWave BotGuard',
+          title: 'Aura BotGuard',
           titleBarHeight: 0,
           windowWidth: 2,
           windowHeight: 2,

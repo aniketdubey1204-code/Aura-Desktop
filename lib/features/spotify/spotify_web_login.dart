@@ -70,6 +70,7 @@ class SpotifyWebLogin {
       }
       await Future<void>.delayed(const Duration(milliseconds: 300));
       window.launch(loginUrl, triggerOnUrlRequestEvent: false);
+      await YtWebLogin.foreground(window);
       return await _wait(window).timeout(
         _timeout,
         onTimeout: () {

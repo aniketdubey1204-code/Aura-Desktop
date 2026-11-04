@@ -23,6 +23,7 @@ import '../../features/innertube/innertube_api.dart';
 import '../../features/innertube/yt_library_providers.dart';
 import '../../features/innertube/yt_session_keeper.dart';
 import '../../features/innertube/yt_web_login.dart';
+import '../../features/innertube/yt_auth_actions.dart';
 import '../components/ambient.dart' show AmbientStyle, ambientStyleProvider;
 import '../components/artwork.dart';
 import '../components/select.dart';
@@ -1781,98 +1782,7 @@ class _Ytm extends ConsumerWidget {
   /// WebView, waits for login, captures cookies automatically, then
   /// runs the shared roster upsert + chooser tail.
   Future<void> _ytConnect(BuildContext context, WidgetRef ref) async {
-    var cancelled = false;
-    // Non-blocking wait dialog — Cancel just stops listening; the
-    // user closes the browser window via the native guard (hide).
-    // NOTE: popped via the dialog's OWN context. A rootNavigator pop
-    // here would eat the settings page under the go_router ShellRoute.
-    BuildContext? waitDialogContext;
-    unawaited(
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (dialogContext) {
-          waitDialogContext = dialogContext;
-          return ContentDialog(
-            title: const Text('Sign in with Google'),
-            content: const Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    SizedBox(width: 20, height: 20, child: ProgressRing()),
-                    SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        'Complete the sign-in in the browser window. '
-                        'This dialog closes automatically.',
-                        style: TextStyle(fontSize: 12),
-                      ),
-                    ),
-                  ],
-                ),
-                SizedBox(height: 8),
-                Text(
-                  'Passkey verified but the Google page looks stuck? '
-                  'Press Reload — or pick "Try another way" in the '
-                  'Google window and use your password instead.',
-                  style: TextStyle(fontSize: 12),
-                ),
-              ],
-            ),
-            actions: [
-              WaveButton(
-                onPressed: () {
-                  YtWebLogin.reloadLoginPage();
-                },
-                child: const Text('Reload'),
-              ),
-              WaveButton(
-                onPressed: () {
-                  cancelled = true;
-                  Navigator.of(dialogContext).pop();
-                },
-                child: const Text('Cancel'),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-    if (kDebugMode) {
-      debugPrint('YtWebSignIn: waiting for browser login');
-    }
-    String? header;
-    try {
-      header = await YtWebLogin.signIn();
-    } catch (_) {
-      header = null;
-    }
-    if (kDebugMode) {
-      debugPrint(
-        'YtWebSignIn: flow returned header=${header == null ? 'null' : '${header.length} chars'} cancelled=$cancelled',
-      );
-    }
-    // Dismiss the wait dialog if it is still up.
-    final waitCtx = waitDialogContext;
-    if (waitCtx != null && waitCtx.mounted) {
-      Navigator.of(waitCtx).maybePop();
-    }
-    if (cancelled || header == null || header.isEmpty) {
-      if (!cancelled && context.mounted) {
-        await _ytSignInFailed(context, ref);
-      }
-      return;
-    }
-    if (!context.mounted) return;
-    await _ytConnectCaptured(
-      context,
-      ref,
-      header: header,
-      pageId: YtWebLogin.lastCapturedPageId ?? '',
-    );
-    await _refocusMain();
+    await ytWebSignIn(context, ref);
   }
 }
 
