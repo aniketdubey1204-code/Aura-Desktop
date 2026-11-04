@@ -384,6 +384,17 @@ class AnimatedArtworkSession extends ChangeNotifier {
       }
     }
 
+    // Fallback timer: ensure video reveals if width/height are decoded and active
+    Timer(const Duration(milliseconds: 1200), () {
+      if (gen == _generation && !_ready && !_disposed) {
+        final w = player.state.width ?? 0;
+        final h = player.state.height ?? 0;
+        if (w > 0 && h > 0) {
+          mark();
+        }
+      }
+    });
+
     _positionSub = player.stream.position.listen(evaluateProgress);
 
     _bufferingSub = player.stream.buffering.listen((buffering) {
@@ -488,6 +499,13 @@ class AnimatedArtworkSession extends ChangeNotifier {
       if (!completed || _disposed || _refs == 0 || _pausedForBackground) return;
       final gen = _generation;
       final activeUrl = _openedUrl;
+      final p = _player;
+      if (p != null) {
+        try {
+          p.seek(Duration.zero);
+          p.play();
+        } catch (_) {}
+      }
       unawaited(
         _serialized(() async {
           if (_disposed ||
@@ -550,7 +568,22 @@ class AnimatedArtworkSession extends ChangeNotifier {
         await dyn.setProperty('loop-playlist', 'inf');
       } catch (_) {}
       try {
-        await dyn.setProperty('keep-open', 'no');
+        await dyn.setProperty('keep-open', 'yes');
+      } catch (_) {}
+      try {
+        await dyn.setProperty('force-seekable', 'yes');
+      } catch (_) {}
+      try {
+        await dyn.setProperty('hr-seek', 'yes');
+      } catch (_) {}
+      try {
+        await dyn.setProperty('cache', 'yes');
+      } catch (_) {}
+      try {
+        await dyn.setProperty('demuxer-max-bytes', '${16 * 1024 * 1024}');
+      } catch (_) {}
+      try {
+        await dyn.setProperty('demuxer-max-back-bytes', '${16 * 1024 * 1024}');
       } catch (_) {}
     } catch (_) {}
   }

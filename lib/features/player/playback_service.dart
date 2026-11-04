@@ -845,12 +845,15 @@ class PlaybackService extends StateNotifier<PlayerSnapshot> {
       _armStandbyForNext(nextTrack, nextIndex);
     }
 
-    // 3. Start the overlap when position enters the window — and only on a
-    // deck that is actually ready.
+    // 3. Start the overlap when position enters the window — and on a
+    // deck that is ready or has completed open/duration settling.
+    final sb = _standbyPlayer;
+    final isStandbyReady = _standbyReady ||
+        (sb != null && (sb.state.duration > Duration.zero || nextTrack.duration > Duration.zero));
     if (remaining <= fadeDuration &&
         _standbyArmed &&
-        _standbyReady &&
-        _standbyPlayer != null) {
+        isStandbyReady &&
+        sb != null) {
       _startCrossfade(fadeDuration, sweep: plan.style == MixStyle.filterSweep);
     }
 
@@ -890,12 +893,14 @@ class PlaybackService extends StateNotifier<PlayerSnapshot> {
         final rem = dur - pos;
         final fade = _currentOverlap();
         if (fade > Duration.zero &&
-            rem <= fade + _armLead &&
+            rem <= fade + _armLead + const Duration(seconds: 20) &&
             !_crossfading &&
             !_standbyArmed &&
             _mixGaveUpFor != nextTrack.queueKey &&
             state.isPlaying) {
-          _armStandbyForNext(nextTrack, currentNext);
+          final plan = _planFor(nextTrack);
+          final bp = _timedMixEnabled ? _beatPlanFor(nextTrack, plan.overlap) : null;
+          _armStandbyForNext(nextTrack, currentNext, beatPlan: bp, withStream: stream);
         }
       }
     }, onError: (_) {}));
@@ -979,7 +984,16 @@ class PlaybackService extends StateNotifier<PlayerSnapshot> {
           return;
         }
       }
-      if (sb.state.duration == Duration.zero) return; // never became ready
+      final hasDuration = sb.state.duration > Duration.zero ||
+          (nextTrack.duration > Duration.zero);
+      if (!hasDuration) {
+        _standbyArmed = false;
+        _standbyReady = false;
+        _standbyTrack = null;
+        _standbyStream = null;
+        _standbyIndex = -1;
+        return;
+      }
       if (_timedMixEnabled &&
           _prefs.autoMixSpectral &&
           _sweepSupported == null) {
@@ -1120,10 +1134,13 @@ class PlaybackService extends StateNotifier<PlayerSnapshot> {
           beatPlan: bp, withStream: _nextStreamFor(next)));
       return true;
     }
+    final sb = _standbyPlayer;
+    final isStandbyReady = _standbyReady ||
+        (sb != null && (sb.state.duration > Duration.zero || next.duration > Duration.zero));
     if (_standbyArmed &&
-        _standbyReady &&
+        isStandbyReady &&
         _armedBeatPlan != null &&
-        _standbyPlayer != null &&
+        sb != null &&
         pos >= _armedBeatPlan!.triggerAt - 0.1) {
       _startBeatMix(_armedBeatPlan!,
           sweep: mixPlan.style == MixStyle.filterSweep);
