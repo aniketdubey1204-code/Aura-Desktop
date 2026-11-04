@@ -557,7 +557,7 @@ class _AuthPanelState extends ConsumerState<_AuthPanel> {
                     children: [
                       Icon(FluentIcons.play_solid, size: 14),
                       SizedBox(width: 8),
-                      Text('Login with YouTube Music'),
+                      Text('Sign in with Google'),
                     ],
                   ),
           ),
@@ -580,7 +580,7 @@ class _AuthPanelState extends ConsumerState<_AuthPanel> {
                     children: [
                       Icon(FluentIcons.code, size: 13),
                       SizedBox(width: 6),
-                      Text('Cookie Login'),
+                      Text('Use cookies'),
                     ],
                   ),
                 ),
@@ -614,7 +614,7 @@ class _AuthPanelState extends ConsumerState<_AuthPanel> {
                           children: [
                             Icon(FluentIcons.music_in_collection, size: 13),
                             SizedBox(width: 6),
-                            Text('Connect Spotify'),
+                            Text('Sign in with Spotify'),
                           ],
                         ),
                 ),

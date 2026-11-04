@@ -86,7 +86,7 @@ class YtWebLogin {
   YtWebLogin._();
 
   static const _loginUrl =
-      'https://accounts.google.com/AccountChooser?service=youtube&continue=https%3A%2F%2Fwww.youtube.com%2Fsignin%3Faction_handle_signin%3Dtrue%26app%3Ddesktop%26hl%3Den%26next%3Dhttps%253A%252F%252Fmusic.youtube.com%252F&hl=en';
+      'https://accounts.google.com/ServiceLogin?service=youtube&passive=true&continue=https%3A%2F%2Fwww.youtube.com%2Fsignin%3Faction_handle_signin%3Dtrue%26app%3Ddesktop%26hl%3Den%26next%3Dhttps%253A%252F%252Fmusic.youtube.com%252F&hl=en';
   static const _homeUrl = 'https://music.youtube.com/';
   static const _pollInterval = Duration(seconds: 2);
   static const _timeout = Duration(minutes: 10);
@@ -362,62 +362,51 @@ class YtWebLogin {
   /// `customUserAgent = defaultUA + suffix`, so the leading space
   /// matters. Called once per window creation; the cached window
   /// keeps it for reuse.
-  static const _chromeSuffix = ' Chrome/131.0.0.0 Safari/537.36';
+  static const _macChromeSuffix = ' Chrome/131.0.0.0 Safari/537.36';
 
-  /// Document-start compatibility shim for embedded browsers on Windows, macOS, Linux.
-  /// Masks embedded WebView markers, strips window.chrome.webview, and sets
-  /// standard Chrome userAgent and userAgentData before any Google script runs.
-  static const _browserCompatShim = r'''
+  /// Document-start compatibility shim for macOS only.
+  ///
+  /// Google's disallowed_useragent block keys off the embedded
+  /// browser fingerprint (WKWebView reports no 
+avigator.userAgentData
+  /// and no window.chrome). This shim presents a coherent desktop
+  /// Chrome surface before any page script runs.
+  static const _macCompatShim = r'''
 (function () {
   try {
-    var isMac = (navigator.platform && navigator.platform.indexOf('Mac') >= 0);
-    var ua = isMac
-      ? 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
-      : 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
-
-    try {
-      Object.defineProperty(navigator, 'userAgent', { get: function () { return ua; } });
-      Object.defineProperty(navigator, 'appVersion', { get: function () { return ua.replace('Mozilla/', ''); } });
-    } catch (e) {}
-
-    // Remove Edge WebView2 signature
-    try {
-      if (window.chrome) {
-        delete window.chrome.webview;
-      } else {
-        window.chrome = { runtime: {} };
-      }
-    } catch (e) {}
-
-    try {
-      Object.defineProperty(navigator, 'webdriver', { get: function () { return undefined; } });
-    } catch (e) {}
-
-    try {
+    var ua = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) '
+      + 'AppleWebKit/537.36 (KHTML, like Gecko) '
+      + 'Chrome/131.0.0.0 Safari/537.36';
+    Object.defineProperty(navigator, 'userAgent', { get: function () { return ua; } });
+    if (!navigator.userAgentData) {
       var brands = [
         { brand: 'Chromium', version: '131' },
         { brand: 'Google Chrome', version: '131' },
         { brand: 'Not_A Brand', version: '24' }
       ];
-      var platform = isMac ? 'macOS' : 'Windows';
-      var uad = {
-        brands: brands,
-        mobile: false,
-        platform: platform,
-        getHighEntropyValues: function () {
-          return Promise.resolve({
+      Object.defineProperty(navigator, 'userAgentData', {
+        get: function () {
+          return {
             brands: brands,
             mobile: false,
-            platform: platform,
-            platformVersion: isMac ? '14.0.0' : '15.0.0',
-            architecture: isMac ? 'arm' : 'x86',
-            bitness: '64',
-            uaFullVersion: '131.0.0.0'
-          });
+            platform: 'macOS',
+            getHighEntropyValues: function () {
+              return Promise.resolve({
+                brands: brands,
+                mobile: false,
+                platform: 'macOS',
+                platformVersion: '14.0.0',
+                architecture: 'arm',
+                bitness: '64',
+                uaFullVersion: '131.0.0.0'
+              });
+            }
+          };
         }
-      };
-      Object.defineProperty(navigator, 'userAgentData', { get: function () { return uad; } });
-    } catch (e) {}
+      });
+    }
+    if (!window.chrome) { window.chrome = { runtime: {} }; }
+    Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
   } catch (e) {}
 })();
 ''';
@@ -465,12 +454,14 @@ class YtWebLogin {
         ),
       );
       _cachedWindow = w;
-      try {
-        w.addScriptToExecuteOnDocumentCreated(_browserCompatShim);
-      } catch (_) {}
-      try {
-        await w.setApplicationNameForUserAgent(_chromeSuffix);
-      } catch (_) {}
+      if (Platform.isMacOS) {
+        try {
+          w.addScriptToExecuteOnDocumentCreated(_macCompatShim);
+        } catch (_) {}
+        try {
+          await w.setApplicationNameForUserAgent(_macChromeSuffix);
+        } catch (_) {}
+      }
       // If the window ever really dies, drop the cache so the next
       // sign-in creates a fresh window instead of talking to a dead one.
       unawaited(w.onClose.then((_) {
@@ -785,9 +776,13 @@ class YtWebLogin {
         text = await _pageText(webview);
         if (onGoogle && text != null && isBrowserBlockedPage(text)) {
           if (kDebugMode) {
-            debugPrint('YtWebLogin: Google blocked the embedded browser');
+            debugPrint('YtWebLogin: embedded Google block page detected, redirecting to music.youtube.com');
           }
-          return const _LoginResult(null, YtSignInFailure.browserBlocked);
+          try {
+            webview.launch(_homeUrl, triggerOnUrlRequestEvent: false);
+          } catch (_) {}
+          await Future<void>.delayed(const Duration(seconds: 4));
+          continue;
         }
         if (await gone()) {
           return const _LoginResult(null, YtSignInFailure.windowClosed);

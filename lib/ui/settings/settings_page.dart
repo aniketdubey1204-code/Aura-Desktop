@@ -1566,9 +1566,14 @@ class _SpotifyCard extends ConsumerWidget {
                 child: const Text('Disconnect'),
               )
             else ...[
-              WaveFilledButton(
+              WaveButton(
                 onPressed: () => spotifyConnectWithCookie(context, ref),
-                child: const Text('Login with cookies'),
+                child: const Text('Use cookies'),
+              ),
+              const SizedBox(width: 8),
+              WaveFilledButton(
+                onPressed: () => spotifyConnectWithWebView(context, ref),
+                child: const Text('Sign in with Spotify'),
               ),
             ],
           ],
@@ -1637,7 +1642,7 @@ class _Ytm extends ConsumerWidget {
                     const SizedBox(width: 8),
                     WaveFilledButton(
                       onPressed: () => _ytConnect(context, ref),
-                      child: const Text('Connect'),
+                      child: const Text('Sign in with Google'),
                     ),
                   ],
                 ),
