@@ -14,12 +14,12 @@ class LastFmKeyGuide extends StatelessWidget {
   static const _steps = [
     'Sign in to Last.fm in your browser, then open the API account page '
         '(button below).',
-    'Fill in a contact email, an application name such as “LastWave” and '
+    'Fill in a contact email, an application name such as “Aura” and '
         'a short description. Callback URL and homepage can stay empty.',
     'Submit the form. Last.fm then shows an “API key” and a “Shared '
         'secret”.',
     'Copy both into the fields here and press Save keys.',
-    'Press Connect with Last.fm and approve LastWave in the browser tab '
+    'Press Connect with Last.fm and approve Aura in the browser tab '
         'that opens.',
   ];
 

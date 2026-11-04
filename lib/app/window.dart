@@ -28,7 +28,7 @@ Future<void> setupWindow() async {
       size: Size(1360, 860),
       minimumSize: Size(1024, 640),
       center: true,
-      title: 'LastWave',
+      title: 'Aura',
       titleBarStyle: TitleBarStyle.hidden,
       // Neutral graphite — the Wave token, so first frame never flashes
       // a different base in either theme.
@@ -93,10 +93,10 @@ Future<void> _setupTray() async {
 
     await trayManager.setIcon(iconPath);
     if (!Platform.isLinux) {
-      await trayManager.setToolTip('LastWave');
+      await trayManager.setToolTip('Aura');
     }
     await trayManager.setContextMenu(Menu(items: [
-      MenuItem(key: 'show', label: 'Show LastWave'),
+      MenuItem(key: 'show', label: 'Show Aura'),
       MenuItem.separator(),
       MenuItem(key: 'toggle', label: 'Play / Pause  (Ctrl+Alt+P)'),
       MenuItem(key: 'next', label: 'Next  (Ctrl+Alt+N)'),
@@ -134,17 +134,17 @@ Future<void> _setupHotkeys() async {
       HotKey(
         key: PhysicalKeyboardKey.keyP,
         modifiers: [HotKeyModifier.control, HotKeyModifier.alt],
-        identifier: 'lastwave-toggle',
+        identifier: 'aura-toggle',
       ),
       HotKey(
         key: PhysicalKeyboardKey.keyN,
         modifiers: [HotKeyModifier.control, HotKeyModifier.alt],
-        identifier: 'lastwave-next',
+        identifier: 'aura-next',
       ),
       HotKey(
         key: PhysicalKeyboardKey.keyB,
         modifiers: [HotKeyModifier.control, HotKeyModifier.alt],
-        identifier: 'lastwave-prev',
+        identifier: 'aura-prev',
       ),
     ];
     for (final binding in bindings) {

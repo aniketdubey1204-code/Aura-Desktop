@@ -389,7 +389,7 @@ class _AccentPreview extends StatelessWidget {
         '#${argb.toRadixString(16).padLeft(8, '0').substring(2).toUpperCase()}';
     final text = switch (resolution.source) {
       AccentSource.custom => 'Custom colour · $hex',
-      AccentSource.lastwave => 'LastWave neutral · $hex',
+      AccentSource.lastwave => 'Aura neutral · $hex',
       AccentSource.system =>
         resolution.resolved
             ? 'Desktop accent · $hex'
@@ -609,7 +609,7 @@ class _InShellConnectState extends ConsumerState<_InShellConnect> {
       if (!mounted) return;
       setState(
         () => _error =
-            'Not approved yet — approve LastWave in the browser, then retry.',
+            'Not approved yet — approve Aura in the browser, then retry.',
       );
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -3145,7 +3145,7 @@ class _AboutState extends ConsumerState<_About> {
   Widget build(BuildContext context) {
     return _Group(
       id: 'about.main',
-      title: 'About LastWave',
+      title: 'About Aura',
       subtitle: 'Build and project links',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -3156,7 +3156,7 @@ class _AboutState extends ConsumerState<_About> {
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               Text(
-                'LastWave Desktop · v$appVersion',
+                'Aura Desktop · v$appVersion',
                 style: WaveType.trackTitle,
               ),
               _buildUpdateButton(),
@@ -3169,7 +3169,7 @@ class _AboutState extends ConsumerState<_About> {
             children: [
               WaveButton(
                 onPressed: () =>
-                    _open('https://github.com/Clash-Projects/LastWave-Desktop'),
+                    _open('https://github.com/aniketdubey1204-code/LastWave-Desktop'),
                 child: const Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -3181,7 +3181,7 @@ class _AboutState extends ConsumerState<_About> {
               ),
               WaveButton(
                 onPressed: () => _open(
-                  'https://github.com/Clash-Projects/LastWave-Desktop/issues',
+                  'https://github.com/aniketdubey1204-code/LastWave-Desktop/issues',
                 ),
                 child: const Row(
                   mainAxisSize: MainAxisSize.min,
@@ -3194,7 +3194,7 @@ class _AboutState extends ConsumerState<_About> {
               ),
               WaveButton(
                 onPressed: () =>
-                    _open('https://github.com/Clash-Projects/LastWave-Desktop'),
+                    _open('https://github.com/aniketdubey1204-code/LastWave-Desktop'),
                 child: const Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [

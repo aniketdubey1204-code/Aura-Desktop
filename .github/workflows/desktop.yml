@@ -403,15 +403,15 @@ jobs:
         shell: pwsh
         run: |
           $exe = Get-ChildItem -Path "." -Filter "*setup*.exe" -Recurse | Select-Object -First 1
-          $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=LastWave" -CertStoreLocation "Cert:\CurrentUser\My"
+          $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=Aura" -CertStoreLocation "Cert:\CurrentUser\My"
           Set-AuthenticodeSignature -FilePath $exe.FullName -Certificate $cert -HashAlgorithm SHA256
 
       - name: Upload Windows Installer
         if: startsWith(github.ref, 'refs/tags/v')
         uses: actions/upload-artifact@v4
         with:
-          name: LastWave-Windows-Installer
-          path: build\windows\installer\lastwave_*.exe
+          name: Aura-Windows-Installer
+          path: build\windows\installer\aura_*.exe
 
       # Portable zip is release-only (v* tags): the raw Release folder
       # above zipped as-is (lastwave_desktop.exe + bundled DLLs/data),
@@ -421,7 +421,7 @@ jobs:
         shell: pwsh
         run: |
           $ver = '${{ github.ref_name }}'.TrimStart('v')
-          $zip = "lastwave_${ver}_windows-x86_64-portable.zip"
+          $zip = "aura_${ver}_windows-x86_64-portable.zip"
           Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath $zip -Force
           Get-ChildItem $zip
 
@@ -429,8 +429,8 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         uses: actions/upload-artifact@v4
         with:
-          name: LastWave-Windows-Portable
-          path: lastwave_*_windows-*-portable.zip
+          name: Aura-Windows-Portable
+          path: aura_*_windows-*-portable.zip
 
   release:
     name: Publish GitHub Release
@@ -454,13 +454,13 @@ jobs:
       - name: Download Windows installer
         uses: actions/download-artifact@v4
         with:
-          name: LastWave-Windows-Installer
+          name: Aura-Windows-Installer
           path: dist
 
       - name: Download Windows portable
         uses: actions/download-artifact@v4
         with:
-          name: LastWave-Windows-Portable
+          name: Aura-Windows-Portable
           path: dist
 
       - name: Download Linux packages

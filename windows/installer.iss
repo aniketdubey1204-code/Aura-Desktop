@@ -14,16 +14,16 @@
 #ifndef MyAppVersionNum
   #define MyAppVersionNum "1.0.0.0"
 #endif
-#define MyAppName "LastWave"
-#define MyAppPublisher "Clash-Projects"
-#define MyAppURL "https://github.com/Clash-Projects/LastWave-Desktop"
-#define MyAppExeName "lastwave_desktop.exe"
+#define MyAppName "Aura"
+#define MyAppPublisher "Aura"
+#define MyAppURL "https://github.com/aniketdubey1204-code/LastWave-Desktop"
+#define MyAppExeName "aura_desktop.exe"
 #define MyAppId "{{E8B4F6A2-7C3D-4A1E-9F5B-2D6A8C4E1A3B5}"
 ; Must match kLastWaveAppUserModelId in windows/runner/app_identity.h.
 ; The shell resolves the SMTC volume-flyout label/icon via the Start Menu
 ; shortcut's AppUserModelID - without this the flyout shows "Unknown app"
 ; with no logo even though the exe sets the same ID at runtime.
-#define MyAppUserModelId "com.lastwave.lastwave_desktop"
+#define MyAppUserModelId "com.aura.aura_desktop"
 
 [Setup]
 AppId={#MyAppId}
@@ -34,11 +34,11 @@ AppPublisher={#MyAppPublisher}
 AppPublisherURL={#MyAppURL}
 AppSupportURL={#MyAppURL}
 AppUpdatesURL={#MyAppURL}
-DefaultDirName={localappdata}\Programs\LastWave
+DefaultDirName={localappdata}\Programs\Aura
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
 OutputDir=..\build\windows\installer
-OutputBaseFilename=lastwave_{#MyAppVersion}_windows-x86_64-setup
+OutputBaseFilename=aura_{#MyAppVersion}_windows-x86_64-setup
 Compression=zip/1
 SolidCompression=no
 SetupIconFile=runner\resources\app_icon.ico

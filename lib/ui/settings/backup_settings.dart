@@ -35,7 +35,7 @@ class _BackupSettingsState extends ConsumerState<BackupSettings> {
           );
       final saved = await FilePicker.saveFile(
         dialogTitle: 'Export backup',
-        fileName: 'lastwave-backup.json',
+        fileName: 'aura-backup.json',
         bytes: utf8.encode(json),
         type: FileType.custom,
         allowedExtensions: const ['json'],
@@ -68,7 +68,7 @@ class _BackupSettingsState extends ConsumerState<BackupSettings> {
     final parsed = repo.read(content, playlists.all);
     if (!mounted) return;
     if (parsed is BackupReadInvalid) {
-      setState(() => _status = 'That file is not a LastWave backup.');
+      setState(() => _status = 'That file is not an Aura backup.');
       return;
     }
     if (parsed is BackupReadUnsupported) {

@@ -77,7 +77,7 @@ class _WaveInfoBarHostState extends ConsumerState<WaveInfoBarHost> {
       bars.add(InfoBar(
         title: const Text('Playing in the tray'),
         content: const Text(
-            'Closing hides LastWave — Quit from the tray menu to exit.'),
+            'Closing hides Aura — Quit from the tray menu to exit.'),
         severity: InfoBarSeverity.info,
         isLong: false,
         onClose: () =>

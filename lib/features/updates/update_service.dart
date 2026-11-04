@@ -111,6 +111,7 @@ AppInstallType detectCurrentInstallType() {
       final hasUninstaller = File(p.join(exeDir, 'unins000.exe')).existsSync() ||
           File(p.join(exeDir, 'unins001.exe')).existsSync();
       final inPrograms = exePath.toLowerCase().contains(r'programs\lastwave') ||
+          exePath.toLowerCase().contains(r'programs\aura') ||
           exePath.toLowerCase().contains(r'program files');
 
       if (hasUninstaller || inPrograms) {
@@ -282,7 +283,7 @@ class AppUpdateInfo {
 class UpdateService {
   final Dio _dio;
 
-  static const String repoOwner = 'Clash-Projects';
+  static const String repoOwner = 'aniketdubey1204-code';
   static const String repoName = 'LastWave-Desktop';
   static const String releasesLatestUrl =
       'https://api.github.com/repos/$repoOwner/$repoName/releases/latest';
@@ -334,7 +335,7 @@ class UpdateService {
     final tempDir = await getTemporaryDirectory();
     final fileName = asset.name.isNotEmpty
         ? asset.name
-        : 'lastwave_update_${update.version}.exe';
+        : 'aura_update_${update.version}.exe';
     final savePath = p.join(tempDir.path, fileName);
 
     // Delete any stale partially-downloaded file first

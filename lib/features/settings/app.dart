@@ -1,3 +1,4 @@
+import '../connect/aura_connect_service.dart';
 import 'dart:async';
 
 import 'package:fluent_ui/fluent_ui.dart';
@@ -185,6 +186,7 @@ class _LastWaveAppState extends ConsumerState<LastWaveApp> {
         (_, inside) => _gate.update(inside));
     // Bridges Jam room events to the player; idle until a room is joined.
     ref.watch(jamSyncProvider);
+    ref.watch(auraConnectProvider);
     final theme = ref.watch(themeControllerProvider);
     // Accent source (custom / LastWave neutral / system / artwork) is
     // resolved in one place; anything that can't answer falls back to the
@@ -221,7 +223,7 @@ class _LastWaveAppState extends ConsumerState<LastWaveApp> {
       liquidGlass: theme.liquidGlass,
       child: WindowLifecycle(
         child: FluentApp.router(
-          title: 'LastWave',
+          title: 'Aura',
           debugShowCheckedModeBanner: false,
           theme: lightTheme,
           darkTheme: darkTheme,

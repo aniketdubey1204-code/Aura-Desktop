@@ -1,3 +1,4 @@
+import '../../features/connect/aura_connect_service.dart';
 import 'dart:io';
 import 'dart:math' as math;
 
@@ -84,6 +85,9 @@ class WavePlayerDock extends ConsumerWidget {
           repeatMode: s.repeatMode,
         )));
     final notifier = ref.read(playbackServiceProvider.notifier);
+    final auraConnect = ref.watch(auraConnectProvider);
+    final auraConnectNotifier = ref.read(auraConnectProvider.notifier);
+    final isRemote = auraConnect.isRemoteActive && auraConnect.currentTrack != null;
     final current = player.current;
     // Always-on Jam rooms lock pause/skip for a minute after you use one.
     final jamUntil = ref.watch(jamControllerProvider.select(
@@ -158,12 +162,19 @@ class WavePlayerDock extends ConsumerWidget {
                         opacity: anim,
                         child: child,
                       ),
-                      child: current == null
-                          ? _IdleIdentity(
-                              key: const ValueKey('idle'),
-                              onExpand: onExpand,
+                      child: isRemote
+                          ? _RemoteIdentity(
+                              key: const ValueKey('remote_identity'),
+                              track: auraConnect.currentTrack!,
+                              device: auraConnect.activeDevice,
+                              onSwitchToLocal: auraConnectNotifier.switchToLocal,
                             )
-                          : KeyedSubtree(
+                          : current == null
+                              ? _IdleIdentity(
+                                  key: const ValueKey('idle'),
+                                  onExpand: onExpand,
+                                )
+                              : KeyedSubtree(
                               key: ValueKey(current.queueKey),
                               child: Row(
                                 children: [
@@ -282,19 +293,17 @@ class WavePlayerDock extends ConsumerWidget {
                                           : 'Previous',
                                   icon: WaveIcons.previous,
                                   large: true,
-                                  onTap: current == null || jamLocked
+                                  onTap: (current == null && !isRemote) || jamLocked
                                       ? null
-                                      : notifier.previous,
+                                      : (isRemote ? auraConnectNotifier.previous : notifier.previous),
                                 ),
                                 _PlayGlyph(
-                                  playing: player.isPlaying,
-                                  buffering: player.isBuffering,
-                                  // Resuming is always allowed; only pausing
-                                  // is locked during the Jam cooldown.
-                                  enabled: current != null &&
+                                  playing: isRemote ? auraConnect.isPlaying : player.isPlaying,
+                                  buffering: isRemote ? false : player.isBuffering,
+                                  enabled: (current != null || isRemote) &&
                                       !jamLive &&
                                       !(jamLocked && player.isPlaying),
-                                  onTap: notifier.toggle,
+                                  onTap: isRemote ? auraConnectNotifier.togglePlayPause : notifier.toggle,
                                 ),
                                 _Glyph(
                                   tooltip: jamLive
@@ -304,9 +313,9 @@ class WavePlayerDock extends ConsumerWidget {
                                           : 'Next',
                                   icon: WaveIcons.next,
                                   large: true,
-                                  onTap: current == null || jamLocked
+                                  onTap: (current == null && !isRemote) || jamLocked
                                       ? null
-                                      : notifier.next,
+                                      : (isRemote ? auraConnectNotifier.next : notifier.next),
                                 ),
                                 _Glyph(
                                   tooltip: jamLive
@@ -501,6 +510,108 @@ class WavePlayerDock extends ConsumerWidget {
 const double _kCompactDockHeight = 56;
 
 /// Placeholder identity — dock never collapses to zero height.
+class _RemoteIdentity extends StatelessWidget {
+  final AuraRemoteTrack track;
+  final AuraConnectDevice? device;
+  final VoidCallback? onSwitchToLocal;
+
+  const _RemoteIdentity({
+    super.key,
+    required this.track,
+    this.device,
+    this.onSwitchToLocal,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final dark = waveIsDark(context);
+    final devName = device?.name ?? 'Phone';
+    final route = device?.outputRoute ?? 'Speaker';
+
+    return Row(
+      children: [
+        WaveArtwork(
+          url: track.artworkUrl,
+          size: 48,
+          radius: WaveRadius.artwork,
+          label: track.title,
+          title: track.title,
+          artist: track.artist,
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1DB954).withValues(alpha: 0.18),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFF1DB954).withValues(alpha: 0.5)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(WaveIcons.device, size: 10, color: Color(0xFF1DB954)),
+                        const SizedBox(width: 3),
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 160),
+                          child: Text(
+                            '$devName • $route',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 9.5,
+                              color: Color(0xFF1DB954),
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 2),
+              Text(
+                track.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: WaveType.trackTitle.copyWith(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              WaveArtistLine(
+                artist: track.artist,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: WaveType.meta.copyWith(
+                  fontSize: 11.5,
+                  color: dark ? WaveColors.textSecondary : WaveColors.lightTextSecondary,
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (onSwitchToLocal != null)
+          LWTooltip(
+            message: 'Switch audio to this PC',
+            child: IconButton(
+              icon: const Icon(WaveIcons.speaker, size: 14),
+              onPressed: onSwitchToLocal,
+            ),
+          ),
+      ],
+    );
+  }
+}
+
 class _IdleIdentity extends StatelessWidget {
   final VoidCallback onExpand;
   const _IdleIdentity({super.key, required this.onExpand});
@@ -1066,11 +1177,18 @@ class _DockProgressState extends ConsumerState<_DockProgress> {
     ));
     final dark = waveIsDark(context);
     final accent = waveAccent(context);
-    final clock = ref.watch(playbackServiceProvider.select((s) => (
-          position: s.position,
-          buffered: s.buffered,
-          duration: s.duration,
-        )));
+    final auraConnect = ref.watch(auraConnectProvider);
+    final clock = auraConnect.isRemoteActive
+        ? (
+            position: auraConnect.position,
+            buffered: auraConnect.duration,
+            duration: auraConnect.duration,
+          )
+        : ref.watch(playbackServiceProvider.select((s) => (
+              position: s.position,
+              buffered: s.buffered,
+              duration: s.duration,
+            )));
     final notifier = ref.read(playbackServiceProvider.notifier);
     // Settings → Experimental swaps the timeline for a wave; the straight
     // bar stays the default so nothing changes for anyone who never opts in.
@@ -1494,6 +1612,15 @@ class _VolumeSection extends ConsumerWidget {
   const _VolumeSection();
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final auraConnect = ref.watch(auraConnectProvider);
+    if (auraConnect.isRemoteActive) {
+      final notifier = ref.read(auraConnectProvider.notifier);
+      return _VolumeGlyph(
+        volume: auraConnect.volume,
+        onMute: () => notifier.setVolume(auraConnect.volume > 0 ? 0 : 0.8),
+        onVolume: notifier.setVolume,
+      );
+    }
     final volume =
         ref.watch(playbackServiceProvider.select((s) => s.volume));
     final output = ref.read(audioOutputProvider.notifier);
@@ -1510,6 +1637,15 @@ class _VolumeFlyoutSection extends ConsumerWidget {
   const _VolumeFlyoutSection();
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final auraConnect = ref.watch(auraConnectProvider);
+    if (auraConnect.isRemoteActive) {
+      final notifier = ref.read(auraConnectProvider.notifier);
+      return _VolumeFlyoutGlyph(
+        volume: auraConnect.volume,
+        onMute: () => notifier.setVolume(auraConnect.volume > 0 ? 0 : 0.8),
+        onVolume: notifier.setVolume,
+      );
+    }
     final volume =
         ref.watch(playbackServiceProvider.select((s) => s.volume));
     final output = ref.read(audioOutputProvider.notifier);

@@ -52,7 +52,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   // Single-instance enforcement: prevent multiple LastWave processes from
   // launching simultaneously, which would create duplicate tray icons and
   // audio playback conflicts. If an instance is already running, activate it.
-  HANDLE hMutex = ::CreateMutexW(nullptr, TRUE, L"Local\\LastWaveDesktopSingleInstanceMutex");
+  HANDLE hMutex = ::CreateMutexW(nullptr, TRUE, L"Local\\AuraDesktopSingleInstanceMutex");
   if (GetLastError() == ERROR_ALREADY_EXISTS) {
     HWND existingWnd = ::FindWindowW(L"FLUTTER_RUNNER_WIN32_WINDOW", nullptr);
     if (existingWnd != nullptr) {
@@ -108,7 +108,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   FlutterWindow window(project);
   Win32Window::Point origin(10, 10);
   Win32Window::Size size(1280, 720);
-  if (!window.Create(L"lastwave_desktop", origin, size)) {
+  if (!window.Create(L"Aura", origin, size)) {
     ::timeEndPeriod(1);
     return EXIT_FAILURE;
   }

@@ -16,7 +16,7 @@ import '../theme/tokens.dart';
 import '../theme/wave_icons.dart';
 
 const _githubUrl =
-    'https://github.com/Clash-Projects/LastWave-Desktop';
+    'https://github.com/aniketdubey1204-code/LastWave-Desktop';
 
 /// Mandatory Last.fm entry screen.
 ///
@@ -88,7 +88,7 @@ class _WaveWelcomePageState
     } catch (e) {
       if (!mounted) return;
       setState(() => _error =
-          'Not approved yet — approve LastWave in the browser, then retry.');
+          'Not approved yet — approve Aura in the browser, then retry.');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -213,7 +213,7 @@ class _WelcomeChrome extends StatelessWidget {
             // second, non-native set of controls.
             SizedBox(width: Platform.isMacOS ? 84 : 16),
             Text(
-              'LASTWAVE',
+              'AURA',
               style: WaveType.overline.copyWith(
                 color: waveTextTertiary(context),
               ),
@@ -415,7 +415,7 @@ class _AuthPanelState extends ConsumerState<_AuthPanel> {
           const _WelcomeLogo(),
           const SizedBox(height: 28),
           Text(
-            'LastWave',
+            'Aura',
             textAlign: TextAlign.center,
             style: WaveType.pageTitle.copyWith(fontSize: 40),
           ),
@@ -554,9 +554,9 @@ class _AuthPanelState extends ConsumerState<_AuthPanel> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Approve LastWave in the browser tab that just opened, '
+              'Approve Aura in the browser tab that just opened, '
               'then finish sign-in here.',
-              semanticsLabel: 'Approve LastWave in the browser tab that '
+              semanticsLabel: 'Approve Aura in the browser tab that '
                   'just opened, then finish sign-in here.',
               style: WaveType.meta.copyWith(color: tertiary),
               textAlign: TextAlign.center,
@@ -565,7 +565,7 @@ class _AuthPanelState extends ConsumerState<_AuthPanel> {
           const SizedBox(height: 8),
           Text(
             'Scrobbling, stats and taste sync. Authentication opens '
-            'through Last.fm, LastWave never asks for your password.',
+            'through Last.fm, Aura never asks for your password.',
             style: WaveType.meta.copyWith(color: tertiary),
             textAlign: TextAlign.center,
           ),
@@ -582,7 +582,7 @@ class _AuthPanelState extends ConsumerState<_AuthPanel> {
               children: [
                 Icon(FluentIcons.favorite_star, size: 14),
                 SizedBox(width: 6),
-                Text('Star LastWave on GitHub'),
+                Text('Star Aura on GitHub'),
               ],
             ),
           ),
@@ -740,7 +740,7 @@ class _ApiKeyFormState extends ConsumerState<_ApiKeyForm> {
           ),
           const SizedBox(height: 6),
           Text(
-            'LastWave ships with no keys of its own — these stay on '
+            'Aura ships with no keys of its own — these stay on '
             'this device.',
             style: WaveType.meta.copyWith(
               color: dark
@@ -764,11 +764,11 @@ class _WelcomeLogo extends StatelessWidget {
   Widget build(BuildContext context) {
     return Center(
       child: Image.asset(
-        'assets/brand/lastwave-logo.png',
+        'assets/brand/aura-logo.png',
         width: 96,
         height: 96,
         filterQuality: FilterQuality.medium,
-        semanticLabel: 'LastWave logo',
+        semanticLabel: 'Aura logo',
       ),
     );
   }

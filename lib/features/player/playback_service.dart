@@ -1,3 +1,4 @@
+import '../connect/aura_connect_service.dart';
 import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
@@ -39,6 +40,11 @@ import '../../core/error/fatal_crumbs.dart';
 /// - session persistence + scrobble thresholds
 /// - stream failure backoff (client cooldown + unavailable set)
 class PlaybackService extends StateNotifier<PlayerSnapshot> {
+  Ref? _ref;
+  void setRef(Ref ref) {
+    _ref = ref;
+  }
+
   final InnerTubeMusicApi _tube;
   final LosslessSource _lossless;
   final void Function(String notice)? _onAddonQuota;
