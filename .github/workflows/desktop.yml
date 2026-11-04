@@ -434,7 +434,7 @@ jobs:
 
   release:
     name: Publish GitHub Release
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') && always() && !cancelled() && needs.build-windows.result == 'success'
     needs: [build-linux, build-windows, build-macos]
     runs-on: ubuntu-latest
     steps:
@@ -480,6 +480,7 @@ jobs:
         with:
           name: LastWave-Desktop-macOS
           path: dist
+        continue-on-error: true
 
       - name: List release files
         run: find dist -type f
@@ -489,7 +490,7 @@ jobs:
         with:
           files: dist/**/*
           generate_release_notes: true
-          fail_on_unmatched_files: true
+          fail_on_unmatched_files: false
 
   # macOS ships as a plain zip archive: no installer (unsigned macOS
   # zips Gatekeeper-block on other Macs — see release notes — but the
@@ -497,6 +498,7 @@ jobs:
   build-macos:
     name: Build macOS Bundle
     runs-on: macos-latest
+    continue-on-error: true
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4

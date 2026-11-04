@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:file_picker/file_picker.dart';
@@ -9,9 +10,10 @@ import 'package:window_manager/window_manager.dart';
 
 import '../../ui/components/buttons.dart';
 import '../../ui/components/inputs.dart';
+import '../../ui/settings/yt_profile_chooser.dart';
 import '../../ui/theme/tokens.dart';
 import 'innertube_api.dart';
-import 'yt_profile_chooser.dart';
+import 'yt_library_providers.dart';
 import 'yt_web_login.dart';
 
 Future<void> refocusMain() async {
@@ -489,7 +491,7 @@ Future<bool> ytConnectWithCookies(
                 const SizedBox(height: 8),
                 Text(
                   errorText!,
-                  style: const TextStyle(fontSize: 12, color: Colors.red),
+                  style: TextStyle(fontSize: 12, color: Colors.red),
                 ),
               ],
             ],
