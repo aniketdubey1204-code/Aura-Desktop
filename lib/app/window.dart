@@ -1,0 +1,159 @@
+import 'dart:io';
+import 'dart:ui' show Color;
+
+import 'package:flutter/services.dart';
+import 'package:flutter_acrylic/flutter_acrylic.dart';
+import 'package:hotkey_manager/hotkey_manager.dart';
+import 'package:tray_manager/tray_manager.dart';
+import 'package:window_manager/window_manager.dart';
+
+import '../ui/theme/tokens.dart';
+
+/// Desktop platform integration: native Mica/acrylic materials,
+/// custom window chrome, tray, global hotkeys.
+///
+/// Everything is best-effort — failures are swallowed so the app
+/// always starts, even on platforms missing a backend. Opaque
+/// observatory surfaces are the polished fallback.
+Future<void> setupWindow() async {
+  await _setupAcrylic();
+  try {
+    await windowManager.ensureInitialized();
+    // Route every close request (× button, Alt+F4) through Dart
+    // instead of raw GTK destroy: the shell decides hide-to-tray vs
+    // ordered quit. Without this, Alt+F4 tears the engine down while
+    // libmpv's thread is still calling into Dart (startup crash).
+    await windowManager.setPreventClose(true);
+    const options = WindowOptions(
+      size: Size(1360, 860),
+      minimumSize: Size(1024, 640),
+      center: true,
+      title: 'LastWave',
+      titleBarStyle: TitleBarStyle.hidden,
+      // Neutral graphite — the Wave token, so first frame never flashes
+      // a different base in either theme.
+      backgroundColor: WaveColors.background,
+    );
+    await windowManager.waitUntilReadyToShow(options, () async {
+      await windowManager.show();
+      await windowManager.focus();
+    });
+  } catch (_) {}
+  await _setupTray();
+  await _setupHotkeys();
+}
+
+Future<void> _setupAcrylic() async {
+  try {
+    await Window.initialize();
+    // Mica incorporates wallpaper + theme: the native observatory
+    // base. Tinted dark; light pearl theme switches at runtime.
+    await Window.setEffect(
+      effect: WindowEffect.mica,
+      dark: true,
+    );
+  } catch (_) {
+    // Opaque fallback is the designed default — remain readable.
+  }
+}
+
+/// Switch the native material when the pearl/midnight/AMOLED theme
+/// changes. AMOLED collapses the window background to pure black so the
+/// OS-painted frame (visible during resize / before the first Flutter
+/// frame) matches the black scaffold instead of flashing graphite.
+///
+/// [background] is the Custom theme's page colour, so the OS frame matches
+/// a tinted scaffold too.
+Future<void> applyWindowMaterial({
+  required bool isLight,
+  bool amoled = false,
+  Color? background,
+}) async {
+  try {
+    await Window.setEffect(
+      effect: WindowEffect.mica,
+      dark: !isLight,
+    );
+    await windowManager.setBackgroundColor(
+      background ??
+          (isLight
+              ? WaveColors.lightBackground
+              : (amoled
+                  ? WaveColors.amoledBackground
+                  : WaveColors.background)),
+    );
+  } catch (_) {}
+}
+
+Future<void> _setupTray() async {
+  try {
+    String iconPath = Platform.isWindows 
+      ? 'assets/icons/tray_icon.ico' 
+      : 'assets/icons/tray_icon.png';
+
+    await trayManager.setIcon(iconPath);
+    if (!Platform.isLinux) {
+      await trayManager.setToolTip('LastWave');
+    }
+    await trayManager.setContextMenu(Menu(items: [
+      MenuItem(key: 'show', label: 'Show LastWave'),
+      MenuItem.separator(),
+      MenuItem(key: 'toggle', label: 'Play / Pause  (Ctrl+Alt+P)'),
+      MenuItem(key: 'next', label: 'Next  (Ctrl+Alt+N)'),
+      MenuItem(key: 'prev', label: 'Previous  (Ctrl+Alt+B)'),
+      MenuItem.separator(),
+      MenuItem(key: 'quit', label: 'Quit'),
+    ]));
+  } catch (_) {}
+}
+
+/// Whether the OS backend can deliver *global* transport hotkeys.
+///
+/// libkeybinder (hotkey_manager_linux) is X11-only: on Wayland sessions
+/// (`WAYLAND_DISPLAY` set) registration always fails with
+/// `Binding '<Primary><Alt>…' failed!` warnings and the keys stay dead.
+/// Shell UI must offer the same combos as in-app shortcuts instead.
+bool get globalHotkeysSupported {
+  if (!Platform.isLinux) return true;
+  return Platform.environment['WAYLAND_DISPLAY'] == null;
+}
+
+Future<void> _setupHotkeys() async {
+  // Global transport: Ctrl+Alt+P play/pause, Ctrl+Alt+N next,
+  // Ctrl+Alt+B previous. Handlers are wired in the shell via
+  // hotKeyManager.keyDownHandler forwarding to PlaybackService —
+  // see WaveShell initState. Registration here stays best-effort so
+  // a missing backend never blocks startup.
+  // Wayland has no global-hotkey backend: skip registration so the
+  // native plugin never logs `Binding '<Primary><Alt>…' failed!`.
+  // The shell falls back to in-app shortcuts (globalHotkeysSupported).
+  if (!globalHotkeysSupported) return;
+  try {
+    await hotKeyManager.unregisterAll();
+    final bindings = [
+      HotKey(
+        key: PhysicalKeyboardKey.keyP,
+        modifiers: [HotKeyModifier.control, HotKeyModifier.alt],
+        identifier: 'lastwave-toggle',
+      ),
+      HotKey(
+        key: PhysicalKeyboardKey.keyN,
+        modifiers: [HotKeyModifier.control, HotKeyModifier.alt],
+        identifier: 'lastwave-next',
+      ),
+      HotKey(
+        key: PhysicalKeyboardKey.keyB,
+        modifiers: [HotKeyModifier.control, HotKeyModifier.alt],
+        identifier: 'lastwave-prev',
+      ),
+    ];
+    for (final binding in bindings) {
+      await hotKeyManager.register(
+        binding,
+        // No-op here: the live shell overrides keyDownHandler with a
+        // Riverpod-aware dispatcher once providers exist.
+        keyDownHandler: (_) {},
+      );
+    }
+  } catch (_) {}
+}

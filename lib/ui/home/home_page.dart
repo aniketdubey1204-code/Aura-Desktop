@@ -1,0 +1,2574 @@
+import 'package:flutter/foundation.dart' show listEquals;
+import 'package:fluent_ui/fluent_ui.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
+import 'package:super_sliver_list/super_sliver_list.dart';
+
+import '../../app/track_actions.dart'
+    show playGenerated, playableFromGenerated, relativeTime;
+import '../../core/artwork/official_artwork_service.dart';
+import '../../core/network/network_monitor.dart';
+import '../../features/feed/feed_repository.dart';
+import '../../features/feed/home_blend.dart';
+import '../../features/feed/home_shelf_layout.dart';
+import '../../features/home/home_providers.dart';
+import '../../features/innertube/innertube_api.dart';
+import '../../features/innertube/yt_library_providers.dart';
+import '../../features/lastfm/auth_repository.dart';
+import '../../features/podcasts/podcast_models.dart';
+import '../../features/search/shared_providers.dart';
+import '../../features/podcasts/podcast_repository.dart';
+import '../../features/player/playback_service.dart';
+import '../components/ambient.dart';
+import '../components/artwork.dart';
+import '../components/buttons.dart';
+import '../components/artist_line.dart';
+import '../components/menus.dart';
+import '../components/shelf.dart';
+import '../collections/yt_shelf_page.dart';
+import '../components/states.dart';
+import '../navigation/wave_nav.dart';
+import '../podcasts/podcasts_page.dart';
+import '../theme/motion.dart';
+import '../theme/tokens.dart';
+import '../theme/wave_icons.dart';
+import 'discovery_sections.dart';
+
+/// Rich editorial Home — every section has a distinct representation.
+///
+/// Songs = compact rows · Albums = 152px artwork grid · Mixes = 220px
+/// editorial cards · Charts = ranked numeral rows · New releases = dense
+/// 124px grid. Real feed data only; skeletons while loading, actions on
+/// empty — never a blank "Loading music…" or a giant spinner.
+class WaveHomePage extends ConsumerWidget {
+  const WaveHomePage({super.key});
+
+  String get _greeting {
+    final h = DateTime.now().hour;
+    if (h < 5) return 'Up late';
+    if (h < 12) return 'Good morning';
+    if (h < 18) return 'Good afternoon';
+    return 'Good evening';
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final feed = ref.watch(feedProvider);
+    final auth = ref.watch(authRepositoryProvider);
+    // Watched at build top (never inside the `when` branches): the
+    // empty-state copy is honest about connectivity only when the
+    // device state is actually observed.
+    final online = ref.watch(networkMonitorProvider);
+    final viewport = MediaQuery.sizeOf(context).width;
+
+    // Responsive shell: <900 single col, 900–1300 two col, 1300+ three col,
+    // content capped at 1280 and centered.
+    final pad = viewport < 900 ? 16.0 : viewport < 1300 ? 24.0 : 28.0;
+    final side =
+        ((viewport - WaveDensity.contentMax) / 2).clamp(0, double.infinity) +
+            pad;
+    final quickCols = viewport < 900 ? 1 : viewport < 1300 ? 2 : 3;
+
+    final username = auth.status == AuthStatus.signedIn &&
+            auth.username.isNotEmpty
+        ? auth.username
+        : '';
+    final date = DateFormat('EEEE, MMM d').format(DateTime.now());
+
+    // One shared WinUI entrance timeline for the whole page: it starts
+    // the moment feed data lands, so sections cascade in together and
+    // lazily-built rows never replay the animation during scroll.
+    return WaveEntranceGroup(
+      start: feed.hasValue,
+      child: CustomScrollView(
+        slivers: [
+        SliverPadding(
+          padding: EdgeInsets.fromLTRB(side, 22, side, 0),
+          sliver: SliverToBoxAdapter(
+            child: WaveEntrance(
+              local: true,
+              child: _Header(
+                greeting: _greeting,
+                username: username,
+                date: date,
+                signedIn: auth.status == AuthStatus.signedIn,
+              ),
+            ),
+          ),
+        ),
+        feed.when(
+          loading: () => SliverPadding(
+            padding: EdgeInsets.fromLTRB(side, 18, side, 32),
+            sliver: const SliverToBoxAdapter(child: _HomeSkeleton()),
+          ),
+          error: (e, _) => SliverPadding(
+            padding: EdgeInsets.fromLTRB(side, 18, side, 32),
+            sliver: SliverToBoxAdapter(
+              child: WaveError(
+                title: 'Could not load your feed',
+                message: '$e',
+                onRetry: () => ref.invalidate(feedProvider),
+              ),
+            ),
+          ),
+          data: (data) {
+            final connected = ref.watch(ytConnectionProvider).connected;
+            final ytShelves = ref.watch(ytHomeShelvesProvider);
+            if (connected && ytShelves.isLoading && !ytShelves.hasValue) {
+              return SliverPadding(
+                padding: EdgeInsets.fromLTRB(side, 18, side, 32),
+                sliver: const SliverToBoxAdapter(child: _HomeSkeleton()),
+              );
+            }
+            final blend = connected
+                ? blendHomeFeed(
+                    shelves: ytShelves.valueOrNull ?? const [],
+                    feed: data,
+                    excluded:
+                        ref.watch(databaseProvider).loadExclusionKeys(),
+                  )
+                : null;
+            if (blend != null && blend.hasYouTube) {
+              return _blendedSlivers(
+                  context, ref, data, blend, side, quickCols);
+            }
+            if (data.isEmpty) {
+              // Honest empty state: the repository recorded which legs
+              // failed; offline always wins, otherwise the recorded
+              // reason picks the copy — a non-network cause never says
+              // "offline" and never pushes Last.fm setup on users who
+              // didn't ask for it.
+              final reason = resolveEmptyReason(
+                online: online,
+                data: data,
+              );
+              final copy = switch (reason) {
+                FeedEmptyReason.offline => (
+                    title: "You're offline",
+                    subtitle:
+                        'Connect to load charts and picks.',
+                    action: 'Retry',
+                  ),
+                FeedEmptyReason.lastfmError => (
+                    title: "Couldn't load your picks",
+                    subtitle:
+                        'Last.fm returned an error. Check your API key or retry.',
+                    action: 'Check Last.fm',
+                  ),
+                FeedEmptyReason.chartsError => (
+                    title: 'Charts are unavailable right now',
+                    subtitle:
+                        'YouTube charts failed to load — retry in a bit.',
+                    action: 'Retry',
+                  ),
+                FeedEmptyReason.allFailed => (
+                    title: "Couldn't reach music services",
+                    subtitle:
+                        'Last.fm and charts both failed — check your connection and retry.',
+                    action: 'Retry',
+                  ),
+                _ => (
+                    title: 'Nothing to play yet',
+                    subtitle:
+                        'Like songs, play anything, or connect YouTube Music and Home will fill in.',
+                    action: 'Discover',
+                  ),
+              };
+              return SliverPadding(
+                padding: EdgeInsets.fromLTRB(side, 18, side, 32),
+                sliver: SliverToBoxAdapter(
+                  child: WaveEmpty(
+                    icon: FluentIcons.music_note,
+                    title: copy.title,
+                    subtitle: copy.subtitle,
+                    actionLabel: copy.action,
+                    onAction: () {
+                      switch (reason) {
+                        case FeedEmptyReason.lastfmError:
+                          context.go(
+                              '/settings?section=lastfm');
+                        case FeedEmptyReason.noTaste:
+                          context.go('/search');
+                        default:
+                          ref.invalidate(feedProvider);
+                      }
+                    },
+                  ),
+                ),
+              );
+            }
+            return _feedSlivers(context, ref, data, side, quickCols);
+          },
+        ),
+        ],
+      ),
+    );
+  }
+
+  /// Home while YouTube Music is connected: YouTube's layout and shelves,
+  /// ordered by Last.fm taste. See [blendHomeFeed].
+  Widget _blendedSlivers(BuildContext context, WidgetRef ref, FeedData data,
+      HomeBlend blend, double side, int quickCols) {
+    final layout = ref.watch(homeShelfLayoutProvider);
+    final sections = <String, List<Widget>>{};
+    var slot = 0;
+
+    List<Widget> header({
+      required String title,
+      String? overline,
+      int? count,
+      String? actionLabel,
+      VoidCallback? onAction,
+    }) =>
+        [
+          const SliverToBoxAdapter(child: SizedBox(height: 28)),
+          SliverPadding(
+            padding: EdgeInsets.symmetric(horizontal: side),
+            sliver: SliverToBoxAdapter(
+              child: WaveEntrance(
+                index: slot++,
+                rise: 8,
+                child: LWSectionHeader(
+                  overline: overline,
+                  title: title,
+                  count: count,
+                  actionLabel: actionLabel,
+                  onAction: onAction,
+                ),
+              ),
+            ),
+          ),
+        ];
+
+    Widget songGrid(List<GeneratedTrack> tracks) => SliverPadding(
+          padding: EdgeInsets.only(left: side, right: side, top: 10),
+          sliver: SliverGrid(
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: quickCols,
+              mainAxisSpacing: 4,
+              crossAxisSpacing: 8,
+              mainAxisExtent: 56,
+            ),
+            delegate: SliverChildBuilderDelegate(
+              (context, i) => WaveEntrance(
+                index: i,
+                rise: 10,
+                child: _QuickTile(track: tracks[i]),
+              ),
+              childCount: tracks.length,
+            ),
+          ),
+        );
+
+    Widget rail(Widget child) => SliverPadding(
+          padding: EdgeInsets.only(left: side, right: side, top: 10),
+          sliver: SliverToBoxAdapter(child: child),
+        );
+
+    GeneratedTrack fromYt(YouTubeMusicTrack t) => GeneratedTrack(
+          name: t.title,
+          artist: t.artist,
+          album: t.album,
+          artworkUrl: t.artworkUrl,
+          videoId: t.videoId,
+          durationSeconds: t.durationSeconds,
+        );
+
+    List<Widget> shelfSlivers(YtHomeShelf shelf) {
+      void seeAll() =>
+          context.go('/ytshelf/${Uri.encodeComponent(shelf.title)}');
+      final head = header(
+        title: shelf.title,
+        actionLabel: 'See all',
+        onAction: seeAll,
+      );
+      if (shelf.isTrackShelf) {
+        return [
+          ...head,
+          songGrid(shelf.tracks.take(quickCols * 3).map(fromYt).toList()),
+        ];
+      }
+      if (shelf.isTrackCardShelf) {
+        return [
+          ...head,
+          rail(_YtSongCardRow(
+            tracks: shelf.trackCards.take(20).map(fromYt).toList(),
+            sourceLabel: shelf.title,
+          )),
+        ];
+      }
+      return [
+        ...head,
+        rail(_YtShelfRow(entities: shelf.entities.take(20).toList())),
+      ];
+    }
+
+    // Featured hero with Play / Radio at the very top (as in the plain
+    // feed): the YouTube Music mix when there is one, else the best pick.
+    {
+      GeneratedTrack? hero;
+      List<GeneratedTrack> companions = const [];
+      List<GeneratedTrack> heroQueue = const [];
+      var heroKicker = 'FOR YOU · FEATURED MIX';
+      final mix = ref.watch(personalMixProvider).valueOrNull;
+      if (mix != null && mix.tracks.isNotEmpty) {
+        hero = mix.seed;
+        heroQueue = [mix.seed, ...mix.tracks];
+        companions = mix.tracks.take(3).toList();
+        heroKicker = 'FOR YOU · YOUTUBE MUSIC MIX';
+      } else {
+        final pool = <GeneratedTrack>[
+          ...blend.quickPicks,
+          ...data.heavyRotation,
+          ...data.quickPicks,
+          ...data.charts,
+        ];
+        if (pool.isNotEmpty) {
+          hero = pool.first;
+          companions = pool.skip(1).take(3).toList();
+        }
+      }
+      if (hero != null) {
+        final heroTrack = hero;
+        final heroUpNext = companions;
+        final heroAll = heroQueue;
+        final kicker = heroKicker;
+        sections[HomeShelfId.mixes] = [
+          const SliverToBoxAdapter(child: SizedBox(height: 18)),
+          SliverPadding(
+            padding: EdgeInsets.symmetric(horizontal: side),
+            sliver: SliverToBoxAdapter(
+              child: WaveEntrance(
+                index: slot++,
+                child: _FeaturedHero(
+                  track: heroTrack,
+                  upNext: heroUpNext,
+                  kicker: kicker,
+                  queueAll: heroAll,
+                ),
+              ),
+            ),
+          ),
+        ];
+      }
+    }
+    if (blend.quickPicks.isNotEmpty) {
+      // A whole number of rows, so the grid never ends on a gap.
+      final count = (blend.quickPicks.length ~/ quickCols) * quickCols;
+      sections[HomeShelfId.quickPicks] = [
+        ...header(title: 'Quick picks'),
+        songGrid(blend.quickPicks
+            .take(count == 0 ? blend.quickPicks.length : count)
+            .toList()),
+      ];
+    }
+    if (blend.listenAgain.isNotEmpty) {
+      sections[HomeShelfId.continueListening] = [
+        ...header(
+          title: 'Listen again',
+          actionLabel: 'See all',
+          onAction: () => context.go('/history'),
+        ),
+        rail(_YtSongCardRow(
+          tracks: blend.listenAgain,
+          sourceLabel: 'Listen again',
+        )),
+      ];
+    }
+    sections[HomeShelfId.youtube] = [
+      for (final shelf in blend.personal) ...shelfSlivers(shelf),
+    ];
+    // Named after a real seed or not shown: an unexplained row is just noise.
+    if (data.becauseSeed.isNotEmpty && data.becauseYouListened.length >= 3) {
+      sections[HomeShelfId.because] = [
+        ...header(
+          overline: 'From your Last.fm',
+          title: 'Because you listened to ${data.becauseSeed}',
+        ),
+        rail(_YtSongCardRow(
+          tracks: data.becauseYouListened.take(12).toList(),
+          sourceLabel: 'Because you listened to ${data.becauseSeed}',
+        )),
+      ];
+    }
+    if (blend.artists.length >= 3) {
+      sections[HomeShelfId.artists] = [
+        ...header(
+          title: 'Artists you love',
+          actionLabel: 'See all',
+          onAction: () => context.go('/artists'),
+        ),
+        rail(_ArtistShelf(tracks: blend.artists)),
+      ];
+    }
+    sections[HomeShelfId.youtubeMore] = [
+      for (final shelf in blend.general) ...shelfSlivers(shelf),
+    ];
+    final activities =
+        ref.watch(friendsActivityProvider).valueOrNull ?? const [];
+    if (activities.isNotEmpty) {
+      sections[HomeShelfId.friends] = [
+        ...header(
+          title: 'Friends listening',
+          actionLabel: 'See all',
+          onAction: () => context.go('/friends'),
+        ),
+        rail(_FriendsStrip(activities: activities)),
+      ];
+    }
+    if (ref.watch(podcastHomeProvider).valueOrNull?.any(
+              (s) => s.shows.isNotEmpty || s.episodes.isNotEmpty,
+            ) ==
+        true) {
+      sections[HomeShelfId.podcasts] = [
+        const SliverToBoxAdapter(child: SizedBox(height: 28)),
+        SliverPadding(
+          padding: EdgeInsets.symmetric(horizontal: side),
+          sliver: const SliverToBoxAdapter(child: PodcastHomeShelf()),
+        ),
+      ];
+    }
+
+    // Untouched layout: the connected order. Edited: the user's order wins.
+    final edited = !listEquals(layout.order, HomeShelfCatalog.defaults);
+    final order = edited ? layout.order : HomeShelfCatalog.connected;
+    return SliverMainAxisGroup(slivers: [
+      for (final id in order)
+        if (!layout.hidden.contains(id)) ...?sections[id],
+      const SliverToBoxAdapter(child: SizedBox(height: 28)),
+    ]);
+  }
+
+  Widget _feedSlivers(BuildContext context, WidgetRef ref, FeedData data,
+      double side, int quickCols) {
+    final layout = ref.watch(homeShelfLayoutProvider);
+    final sections = <String, List<Widget>>{};
+    var sink = <Widget>[];
+    void use(String id) {
+      sink = sections.putIfAbsent(id, () => <Widget>[]);
+    }
+
+    void gap(double h) {
+      sink.add(SliverToBoxAdapter(child: SizedBox(height: h)));
+    }
+
+    // Stagger slots for the page entrance cascade (one slot per section).
+    var e = 0;
+    int slot() => e++;
+
+    // Editorial hero: large personal pick (35–45% artwork) + 2–4 compact
+    // companions on the right. Structure, not one giant banner.
+    //
+    // YouTube Music personal mix wins when available: hero = mix seed,
+    // Play queues the whole radio list (coherent Up Next at last) —
+    // otherwise the Last.fm chart-top fallback below.
+    GeneratedTrack? hero;
+    List<GeneratedTrack> companions = const [];
+    List<GeneratedTrack> heroQueue = const [];
+    String heroKicker = 'FOR YOU · FEATURED MIX';
+    final mix = ref.watch(personalMixProvider).valueOrNull;
+    if (mix != null && mix.tracks.isNotEmpty) {
+      hero = mix.seed;
+      heroQueue = [mix.seed, ...mix.tracks];
+      companions = mix.tracks.take(3).toList();
+      heroKicker = 'FOR YOU · YOUTUBE MUSIC MIX';
+    } else if (data.heavyRotation.isNotEmpty) {
+      hero = data.heavyRotation.first;
+      companions = [
+        ...data.quickPicks.take(2),
+        ...data.charts.take(2),
+      ].take(3).toList();
+    } else if (data.quickPicks.isNotEmpty) {
+      hero = data.quickPicks.first;
+      companions = [
+        ...data.quickPicks.skip(1).take(2),
+        ...data.charts.take(2),
+      ].take(3).toList();
+    } else if (data.charts.isNotEmpty) {
+      hero = data.charts.first;
+      companions = data.charts.skip(1).take(3).toList();
+    }
+    use(HomeShelfId.mixes);
+    if (hero != null) {
+      gap(18);
+      final heroTrack = hero;
+      sink.add(SliverPadding(
+        padding: EdgeInsets.only(left: side, right: side),
+        sliver: SliverToBoxAdapter(
+          child: WaveEntrance(
+            index: slot(),
+            child: _FeaturedHero(
+              track: heroTrack,
+              upNext: companions,
+              kicker: heroKicker,
+              queueAll: heroQueue,
+            ),
+          ),
+        ),
+      ));
+    }
+
+    use(HomeShelfId.quickPicks);
+    if (data.quickPicks.isNotEmpty) {
+      gap(26);
+      final picks = data.quickPicks.take(6).toList();
+      sink.add(SliverPadding(
+        padding: EdgeInsets.only(left: side, right: side),
+        sliver: SliverToBoxAdapter(
+          child: WaveEntrance(
+            index: slot(),
+            rise: 8,
+            child: LWSectionHeader(
+              overline: 'Jump back in',
+              title: 'Quick Picks',
+              count: picks.length,
+            ),
+          ),
+        ),
+      ));
+      sink.add(SliverPadding(
+        padding: EdgeInsets.only(left: side, right: side, top: 10),
+        sliver: SliverGrid(
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: quickCols,
+            mainAxisSpacing: 4,
+            crossAxisSpacing: 8,
+            mainAxisExtent: 56,
+          ),
+          delegate: SliverChildBuilderDelegate(
+            (context, i) => WaveEntrance(
+              index: i,
+              rise: 10,
+              child: _QuickTile(track: picks[i]),
+            ),
+            childCount: picks.length,
+          ),
+        ),
+      ));
+    }
+
+    use(HomeShelfId.continueListening);
+    if (data.jumpBackIn.isNotEmpty) {
+      gap(26);
+      final recent = data.jumpBackIn.take(6).toList();
+      sink.add(SliverPadding(
+        padding: EdgeInsets.only(left: side, right: side),
+        sliver: SliverToBoxAdapter(
+          child: WaveEntrance(
+            index: slot(),
+            rise: 8,
+            child: LWSectionHeader(
+              overline: 'History',
+              title: 'Continue Listening',
+              count: recent.length,
+              actionLabel: 'See all',
+              onAction: () => context.go('/history'),
+            ),
+          ),
+        ),
+      ));
+      sink.add(SliverPadding(
+        padding: EdgeInsets.only(top: 10),
+        sliver: SliverToBoxAdapter(
+          child: _CoverShelf(tracks: recent, source: 'Recently played', side: side),
+        ),
+      ));
+    }
+
+    use(HomeShelfId.because);
+    if (data.becauseYouListened.isNotEmpty) {
+      gap(26);
+      final mixes = data.becauseYouListened.take(3).toList();
+      final becauseKicker = data.becauseSeed.isNotEmpty
+          ? 'Because you listened to ${data.becauseSeed}'
+          : 'Generated';
+      sink.add(SliverPadding(
+        padding: EdgeInsets.only(left: side, right: side),
+        sliver: SliverToBoxAdapter(
+          child: WaveEntrance(
+            index: slot(),
+            rise: 8,
+              child: LWSectionHeader(
+                overline: becauseKicker,
+                title: 'Made For You',
+                count: mixes.length,
+                actionLabel: 'Open Mix Lab',
+                onAction: () => context.go('/mixes'),
+            ),
+          ),
+        ),
+      ));
+      sink.add(SliverPadding(
+        padding: EdgeInsets.only(top: 10),
+        sliver: SliverToBoxAdapter(
+          child: _MixShelf(tracks: mixes, side: side),
+        ),
+      ));
+    }
+
+    use(HomeShelfId.albums);
+    if (data.heavyRotation.isNotEmpty) {
+      gap(26);
+      final albums = data.heavyRotation.take(6).toList();
+      sink.add(SliverPadding(
+        padding: EdgeInsets.only(left: side, right: side),
+        sliver: SliverToBoxAdapter(
+          child: WaveEntrance(
+            index: slot(),
+            rise: 8,
+            child: LWSectionHeader(
+              overline: 'Rotation',
+              title: 'Albums For You',
+              count: albums.length,
+              actionLabel: 'See all',
+              onAction: () => context.go('/albums'),
+            ),
+          ),
+        ),
+      ));
+      sink.add(SliverPadding(
+        padding: EdgeInsets.only(top: 10),
+        sliver: SliverToBoxAdapter(
+          child: _AlbumShelf(tracks: albums, source: 'For you', side: side),
+        ),
+      ));
+    }
+
+    use(HomeShelfId.artists);
+    // Artists For You — distinct billed artists (collabs split so
+    // "Drake, Future & Metro Boomin" becomes three portrait tiles,
+    // never a single tile showing an album sleeve).
+    {
+      final seen = <String>{};
+      final artists = <GeneratedTrack>[];
+      for (final t in [
+        ...data.heavyRotation,
+        ...data.charts,
+        ...data.quickPicks
+      ]) {
+        for (final name
+            in OfficialArtworkService.splitArtistCredits(t.artist)) {
+          final key = name.toLowerCase();
+          if (key.isEmpty || seen.contains(key)) continue;
+          seen.add(key);
+          artists.add(GeneratedTrack(
+            name: name,
+            artist: name,
+            artworkUrl: '',
+            videoId: t.videoId,
+          ));
+          if (artists.length >= 6) break;
+        }
+        if (artists.length >= 6) break;
+      }
+      if (artists.isNotEmpty) {
+        gap(26);
+        sink.add(SliverPadding(
+          padding: EdgeInsets.only(left: side, right: side),
+          sliver: SliverToBoxAdapter(
+            child: WaveEntrance(
+              index: slot(),
+              rise: 8,
+              child: LWSectionHeader(
+                overline: 'Artists',
+                title: 'Artists For You',
+                count: artists.length,
+                actionLabel: 'See all',
+                onAction: () => context.go('/artists'),
+              ),
+            ),
+          ),
+        ));
+        sink.add(SliverPadding(
+          padding: EdgeInsets.only(left: side, right: side, top: 10),
+          sliver: SliverToBoxAdapter(
+            child: _ArtistShelf(tracks: artists),
+          ),
+        ));
+      }
+    }
+
+    use(HomeShelfId.friends);
+    // Friends Listening — real friend activity (friend → latest
+    // scrobble with relative time). Hidden entirely when there is
+    // nothing to show; never placeholder names or faked presence.
+    {
+      final activities =
+          ref.watch(friendsActivityProvider).valueOrNull ??
+              const [];
+      if (activities.isNotEmpty) {
+        gap(26);
+        sink.add(SliverPadding(
+          padding: EdgeInsets.only(left: side, right: side),
+          sliver: SliverToBoxAdapter(
+            child: WaveEntrance(
+              index: slot(),
+              rise: 8,
+              child: LWSectionHeader(
+                overline: 'Social',
+                title: 'Friends Listening',
+                count: activities.length,
+                actionLabel: 'See all',
+                onAction: () => context.go('/friends'),
+              ),
+            ),
+          ),
+        ));
+        sink.add(SliverPadding(
+          padding: EdgeInsets.only(left: side, right: side, top: 10),
+          sliver: SliverToBoxAdapter(
+            child: WaveEntrance(
+              index: slot(),
+              rise: 10,
+              child: _FriendsStrip(activities: activities),
+            ),
+          ),
+        ));
+      }
+    }
+
+    use(HomeShelfId.charts);
+    if (data.charts.isNotEmpty) {
+      gap(26);
+      sink.add(SliverPadding(
+        padding: EdgeInsets.only(left: side, right: side),
+        sliver: SliverToBoxAdapter(
+          child: WaveEntrance(
+            index: slot(),
+            child: HomeSpotlightHero(track: data.charts.first),
+          ),
+        ),
+      ));
+      gap(26);
+      final charts = data.charts.take(5).toList();
+      sink.add(SliverPadding(
+        padding: EdgeInsets.only(left: side, right: side),
+        sliver: SliverToBoxAdapter(
+          child: WaveEntrance(
+            index: slot(),
+            rise: 8,
+            child: LWSectionHeader(
+              overline: 'Charts',
+              title: 'Trending Now',
+              count: charts.length,
+            ),
+          ),
+        ),
+      ));
+      sink.add(SliverPadding(
+        padding: EdgeInsets.only(left: side, right: side, top: 6),
+        sliver: SuperSliverList.builder(
+          itemCount: charts.length,
+          itemBuilder: (context, i) => WaveEntrance(
+            index: i,
+            rise: 10,
+            child: _ChartRow(
+                track: charts[i], rank: i + 1, queueAll: charts, index: i),
+          ),
+        ),
+      ));
+    }
+
+    use(HomeShelfId.fresh);
+    if (data.freshFinds.isNotEmpty) {
+      gap(26);
+      final fresh = data.freshFinds.take(5).toList();
+      sink.add(SliverPadding(
+        padding: EdgeInsets.only(left: side, right: side),
+        sliver: SliverToBoxAdapter(
+          child: WaveEntrance(
+            index: slot(),
+            rise: 8,
+            child: LWSectionHeader(
+              overline: 'Discovery',
+              title: 'Fresh Finds',
+              count: fresh.length,
+            ),
+          ),
+        ),
+      ));
+      sink.add(SliverPadding(
+        padding: EdgeInsets.only(left: side, right: side, top: 6),
+        sliver: SuperSliverList.builder(
+          itemCount: fresh.length,
+          itemBuilder: (context, i) => WaveEntrance(
+            index: i,
+            rise: 10,
+            child: _FreshRow(track: fresh[i]),
+          ),
+        ),
+      ));
+    }
+
+    // use(HomeShelfId.releases);
+    // gap(26);
+    // sink.add(SliverPadding(
+    //   padding: EdgeInsets.only(left: side, right: side),
+    //   sliver: SliverToBoxAdapter(
+    //     child: WaveEntrance(
+    //       index: slot(),
+    //       rise: 10,
+    //       child: const HomeNewReleasesSection(),
+    //     ),
+    //   ),
+    // ));
+
+    // use(HomeShelfId.popular);
+    // gap(26);
+    // sink.add(SliverPadding(
+    //   padding: EdgeInsets.only(left: side, right: side),
+    //   sliver: SliverToBoxAdapter(
+    //     child: WaveEntrance(
+    //       index: slot(),
+    //       rise: 10,
+    //       child: const HomePopularShelvesSection(),
+    //     ),
+    //   ),
+    // ));
+
+    use(HomeShelfId.podcasts);
+    final podcastShelves =
+        ref.watch(podcastHomeProvider).valueOrNull ?? const <PodcastShelf>[];
+    if (podcastShelves.any(
+        (s) => s.shows.isNotEmpty || s.episodes.isNotEmpty)) {
+      gap(26);
+      sink.add(SliverPadding(
+        padding: EdgeInsets.only(left: side, right: side),
+        sliver: SliverToBoxAdapter(
+          child: WaveEntrance(
+            index: slot(),
+            rise: 10,
+            child: const PodcastHomeShelf(),
+          ),
+        ),
+      ));
+      gap(26);
+    }
+    final slivers = <Widget>[
+      for (final id in layout.order)
+        if (!layout.hidden.contains(id)) ...?sections[id],
+      const SliverToBoxAdapter(child: SizedBox(height: 6)),
+    ];
+    return SliverMainAxisGroup(slivers: slivers);
+  }
+}
+
+/// Greeting header: 24px time-aware greeting + For {username} + date.
+class _Header extends StatelessWidget {
+  final String greeting;
+  final String username;
+  final String date;
+  final bool signedIn;
+  const _Header({
+    required this.greeting,
+    required this.username,
+    required this.date,
+    required this.signedIn,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final dark = waveIsDark(context);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                username.isNotEmpty ? '$greeting, $username' : greeting,
+                style: WaveType.pageTitle.copyWith(fontSize: 24),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                username.isNotEmpty
+                    ? 'For $username · $date · picked from your taste'
+                    : '$date · picked for you · connect Last.fm for more',
+                style: WaveType.meta.copyWith(
+                  color: dark
+                      ? WaveColors.textSecondary
+                      : WaveColors.lightTextSecondary,
+                ),
+              ),
+            ],
+          ),
+        ),
+        WaveGhostButton(
+          label: 'Edit home',
+          icon: WaveIcons.edit,
+          onPressed: () => context.go('/home-layout'),
+        ),
+        if (!signedIn) ...[
+          const SizedBox(width: 8),
+          MouseRegion(
+            cursor: SystemMouseCursors.click,
+            child: GestureDetector(
+            onTap: () => context.go('/settings?section=lastfm'),
+            child: Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              decoration: BoxDecoration(
+                color: dark ? Colors.white : Colors.black,
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                'Connect',
+                style: WaveType.label.copyWith(
+                  color: dark ? Colors.black : Colors.white,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+          ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+/// Horizontal card rail for a YouTube Music home carousel.
+///
+/// Cards navigate rather than play: the entity is a container (album,
+/// playlist, radio) whose tracks are only known after another browse,
+/// so tapping opens its detail page - the same route the equivalent
+/// shelf on music.youtube.com takes.
+class _YtShelfRow extends StatelessWidget {
+  final List<YouTubeMusicEntity> entities;
+
+  const _YtShelfRow({required this.entities});
+
+  @override
+  Widget build(BuildContext context) {
+    return WaveRail(
+      height: 216,
+      itemCount: entities.length,
+      separatorBuilder: (_, _) => const SizedBox(width: 12),
+      itemBuilder: (context, i) {
+        final e = entities[i];
+        return SizedBox(
+          width: 160,
+          child: WaveMediaCard(
+            title: e.name,
+            subtitle: e.subtitle,
+            titleFallback: e.name,
+            artworkUrl: e.artworkUrl,
+            onTap: () => openYtEntity(context, e),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// Horizontal card rail for song cards from a YouTube Music home
+/// carousel (Listen again style).
+///
+/// Unlike [_YtShelfRow] containers, these cards are directly playable:
+/// tap (or the hover play button) starts a radio of the song - the
+/// single track plus endless similar when it ends, exactly like
+/// [_FreshRow]. The card's own context menu carries Play, Go to album
+/// and the rest.
+class _YtSongCardRow extends ConsumerWidget {
+  final List<GeneratedTrack> tracks;
+  final String sourceLabel;
+  const _YtSongCardRow({
+    required this.tracks,
+    required this.sourceLabel,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    void play(int i) => playGenerated(
+          ref,
+          context,
+          tracks[i],
+          sourceLabel: sourceLabel,
+        );
+    return WaveRail(
+      height: 216,
+      itemCount: tracks.length,
+      separatorBuilder: (_, _) => const SizedBox(width: 12),
+      itemBuilder: (context, i) {
+        final t = tracks[i];
+        return SizedBox(
+          width: 160,
+          child: WaveMediaCard(
+            title: t.name,
+            subtitle: t.artist,
+            titleFallback: t.name,
+            artist: t.artist,
+            videoId: t.videoId,
+            artworkUrl: t.artworkUrl,
+            onTap: () => play(i),
+            onPlay: () => play(i),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// Editorial hero: LEFT large personal pick (artwork 35–45% + metadata +
+/// Play/Radio) + RIGHT 2–4 compact companions. The cover lights its own
+/// halo, never a colour flood — real artwork always.
+class _FeaturedHero extends ConsumerWidget {
+  final GeneratedTrack track;
+  final List<GeneratedTrack> upNext;
+
+  /// Kicker override for sourced heroes (e.g. the YouTube Music mix).
+  final String kicker;
+
+  /// Full queue behind Play. Empty = legacy single-track behaviour.
+  /// Non-empty = Play starts this list at [track].
+  final List<GeneratedTrack> queueAll;
+  const _FeaturedHero({
+    required this.track,
+    this.upNext = const [],
+    this.kicker = 'FOR YOU · FEATURED MIX',
+    this.queueAll = const [],
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final dark = waveIsDark(context);
+    final width = MediaQuery.sizeOf(context).width;
+    final narrow = width < 860;
+    final tint = ref.watch(artworkPaletteProvider(track.artworkUrl));
+    final palette = tint.valueOrNull;
+    // The glow is the cover's most vivid tone, not its dominant one: dominant
+    // is dark for most artwork, which is why a fill seeded from it vanished
+    // into the page.
+    final glow = dark
+        ? (palette?.vibrant ?? ArtworkPalette.fallback.vibrant)
+        : (palette?.lightVibrant ?? ArtworkPalette.fallback.lightVibrant);
+    // The panel is structure only. Any tint anchored to its edges leaves a
+    // straight line of colour wherever the box ends — that was the stain.
+    final panel = dark
+        ? Colors.white.withValues(alpha: 0.035)
+        : Colors.black.withValues(alpha: 0.025);
+    final artSize = narrow ? 132.0 : 176.0;
+    final halo = artSize + 150;
+
+    final left = Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        SizedBox(
+          width: artSize,
+          height: artSize,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              // Halo: bigger than the cell and allowed to paint outside it, so
+              // the light spills past the panel instead of stopping at an edge.
+              Positioned(
+                left: -(halo - artSize) / 2,
+                top: -(halo - artSize) / 2,
+                width: halo,
+                height: halo,
+                child: IgnorePointer(
+                  child: AnimatedOpacity(
+                    opacity: palette == null ? 0 : 1,
+                    duration: waveMotion(context, WaveMotion.slow),
+                    curve: WaveMotion.standard,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: RadialGradient(
+                          stops: const [0, 0.55, 1],
+                          colors: [
+                            glow.withValues(alpha: 0.34),
+                            glow.withValues(alpha: 0.12),
+                            glow.withValues(alpha: 0),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              Positioned.fill(
+                child: Container(
+                  decoration: BoxDecoration(
+                    borderRadius: WaveRadius.artworkRadius,
+                    boxShadow: WaveElevation.artwork(dark),
+                  ),
+                  child: WaveArtwork(
+                    url: track.artworkUrl,
+                    videoId: track.videoId,
+                    size: artSize,
+                    radius: WaveRadius.artwork,
+                    title: track.name,
+                    artist: track.artist,
+                    label: track.name,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 20),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                kicker,
+                style: WaveType.overline.copyWith(
+                  fontSize: 10,
+                  color: dark
+                      ? WaveColors.textTertiary
+                      : WaveColors.lightTextTertiary,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                track.name,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: WaveType.pageTitle
+                    .copyWith(fontSize: narrow ? 20 : 26),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                track.artist,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: WaveType.body.copyWith(
+                  fontSize: 14,
+                  color: dark
+                      ? WaveColors.textSecondary
+                      : WaveColors.lightTextSecondary,
+                ),
+              ),
+              if (track.listeners.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Text(
+                    track.listeners,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: WaveType.meta.copyWith(
+                      color: waveTextTertiary(context),
+                    ),
+                  ),
+                ),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  WavePlayPill(
+                    onTap: () {
+                      if (queueAll.isEmpty) {
+                        playGenerated(ref, context, track,
+                            sourceLabel: 'For you');
+                        return;
+                      }
+                      var at = queueAll.indexWhere(
+                          (t) => t.key == track.key);
+                      if (at < 0) at = 0;
+                      playGenerated(ref, context, queueAll[at],
+                          sourceLabel: 'For you',
+                          queueAll: queueAll,
+                          startIndex: at);
+                    },
+                  ),
+                  const SizedBox(width: 12),
+                  _RadioPill(
+                    onTap: () async {
+                      await ref
+                          .read(playbackServiceProvider.notifier)
+                          .playQueue(
+                              [playableFromGenerated(track)], 0,
+                              sourceLabel: 'For you radio',
+                              endlessRadio: true);
+                    },
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+
+    if (narrow || upNext.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: panel,
+          borderRadius: WaveRadius.floatingRadius,
+        ),
+        child: left,
+      );
+    }
+
+    // Wide: 58% featured + divider + 42% up-next stack.
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: panel,
+        borderRadius: WaveRadius.floatingRadius,
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Expanded(flex: 58, child: left),
+          Container(
+            width: 1,
+            height: 180,
+            margin: const EdgeInsets.symmetric(horizontal: 20),
+            color: (dark ? Colors.white : Colors.black)
+                .withValues(alpha: 0.08),
+          ),
+          Expanded(
+            flex: 42,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Not "up next": the queue panel already means the queue by
+                // that name. These three come after Play, not after this song.
+                Text(
+                  'MORE FOR YOU',
+                  style: WaveType.overline.copyWith(
+                    fontSize: 9.5,
+                    color: waveTextTertiary(context),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                for (var i = 0; i < upNext.length; i++)
+                  _HeroCompanion(
+                    track: upNext[i],
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Compact 56px companion row inside the hero — art + title/artist +
+/// hover play. Keeps the hero music-dense instead of banner-empty.
+class _HeroCompanion extends ConsumerStatefulWidget {
+  final GeneratedTrack track;
+  const _HeroCompanion({
+    required this.track,
+  });
+  @override
+  ConsumerState<_HeroCompanion> createState() => _HeroCompanionState();
+}
+
+class _HeroCompanionState extends ConsumerState<_HeroCompanion> {
+  bool _hover = false;
+  @override
+  Widget build(BuildContext context) {
+    final dark = waveIsDark(context);
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      child: GestureDetector(
+        onTap: () => playGenerated(ref, context, widget.track,
+            sourceLabel: 'For you · more'),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 6),
+          decoration: BoxDecoration(
+            color: _hover
+                ? (dark ? Colors.white : Colors.black)
+                    .withValues(alpha: 0.05)
+                : Colors.transparent,
+            borderRadius: WaveRadius.artworkRadius,
+          ),
+          child: Row(
+            children: [
+              Stack(
+                children: [
+                  WaveArtwork(
+                    url: widget.track.artworkUrl,
+                    videoId: widget.track.videoId,
+                    size: 44,
+                    radius: WaveRadius.artwork,
+                    title: widget.track.name,
+                    artist: widget.track.artist,
+                    label: widget.track.name,
+                  ),
+                  if (_hover)
+                    Positioned.fill(
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.55),
+                          borderRadius: WaveRadius.artworkRadius,
+                        ),
+                        child: const Icon(WaveIcons.play,
+                            size: 15, color: Colors.white),
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(widget.track.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: WaveType.trackTitle
+                            .copyWith(fontSize: 12.5)),
+                    Text(widget.track.artist,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: WaveType.meta.copyWith(fontSize: 11.5)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Outlined companion to [WavePlayPill]: same pill geometry, hairline border
+/// instead of an accent fill, so the hero's two actions read as one pair
+/// (primary accent + secondary outline) rather than a pill and bare text.
+class _RadioPill extends StatefulWidget {
+  final VoidCallback onTap;
+  const _RadioPill({required this.onTap});
+  @override
+  State<_RadioPill> createState() => _RadioPillState();
+}
+
+class _RadioPillState extends State<_RadioPill> {
+  bool _hover = false;
+  bool _pressed = false;
+  @override
+  Widget build(BuildContext context) {
+    final fg = waveTextSecondary(context);
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() {
+        _hover = false;
+        _pressed = false;
+      }),
+      child: GestureDetector(
+        onTapDown: (_) => setState(() => _pressed = true),
+        onTapUp: (_) => setState(() => _pressed = false),
+        onTapCancel: () => setState(() => _pressed = false),
+        onTap: widget.onTap,
+        child: AnimatedContainer(
+          duration: waveMotion(context, WaveMotion.fast),
+          padding:
+              const EdgeInsets.symmetric(horizontal: 22, vertical: 10),
+          decoration: BoxDecoration(
+            color: _pressed
+                ? wavePressedWash(context)
+                : _hover
+                    ? waveHoverWash(context)
+                    : Colors.transparent,
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(color: waveDivider(context)),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(WaveIcons.radio, size: 14, color: fg),
+              const SizedBox(width: 8),
+              Text('Radio', style: WaveType.label.copyWith(color: fg)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Quick Picks tile: 56px, 48px art, hover play, playing wash.
+class _QuickTile extends ConsumerStatefulWidget {
+  final GeneratedTrack track;
+  const _QuickTile({
+    required this.track,
+  });
+  @override
+  ConsumerState<_QuickTile> createState() => _QuickTileState();
+}
+
+class _QuickTileState extends ConsumerState<_QuickTile> {
+  bool _hover = false;
+  @override
+  Widget build(BuildContext context) {
+    final dark = waveIsDark(context);
+    final accent = waveAccent(context);
+    final playing = ref.watch(
+      playbackServiceProvider.select((s) => s.current?.queueKey),
+    ) == widget.track.key;
+
+    final tile = MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      // Grid tiles play just the tapped song — radio picks what
+      // follows. Queuing the rest of the grid played unrelated
+      // ranking neighbours instead.
+      child: GestureDetector(
+        onTap: () => playGenerated(ref, context, widget.track,
+            sourceLabel: 'Quick picks'),
+        onDoubleTap: () => playGenerated(ref, context, widget.track,
+            sourceLabel: 'Quick picks'),
+        child: Container(
+          height: 56,
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+          decoration: BoxDecoration(
+            color: playing
+                ? accent.withValues(alpha: 0.12)
+                : _hover
+                    ? (dark ? Colors.white : Colors.black)
+                        .withValues(alpha: 0.05)
+                    : Colors.transparent,
+            borderRadius: WaveRadius.artworkRadius,
+          ),
+          child: Row(
+            children: [
+              Stack(
+                children: [
+                  WaveArtwork(
+                    url: widget.track.artworkUrl,
+                    videoId: widget.track.videoId,
+                    size: 48,
+                    radius: WaveRadius.artwork,
+                    title: widget.track.name,
+                    artist: widget.track.artist,
+                    label: widget.track.name,
+                  ),
+                  if (_hover || playing)
+                    Positioned.fill(
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.55),
+                          borderRadius: WaveRadius.artworkRadius,
+                        ),
+                        child: Icon(
+                          playing
+                              ? WaveIcons.pause
+                              : WaveIcons.play,
+                          size: 16,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(widget.track.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: WaveType.trackTitle.copyWith(
+                            fontSize: 12.5,
+                            color: playing ? accent : null)),
+                    Text(widget.track.artist,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: WaveType.meta.copyWith(fontSize: 11.5)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    return WaveContextMenu(
+      items: () => waveTrackMenuItems(
+        context: context,
+        ref: ref,
+        title: widget.track.name,
+        artist: widget.track.artist,
+        artworkUrl: widget.track.artworkUrl,
+        videoId: widget.track.videoId,
+      ),
+      child: tile,
+    );
+  }
+}
+
+/// Continue Listening: 140px covers with timestamp meta.
+class _CoverShelf extends StatelessWidget {
+  final List<GeneratedTrack> tracks;
+  final String source;
+  final double side;
+  const _CoverShelf({
+    required this.tracks,
+    required this.source,
+    required this.side,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return WaveRail(
+      height: 208,
+      padding: EdgeInsets.symmetric(horizontal: side),
+      itemCount: tracks.length,
+      separatorBuilder: (_, _) => const SizedBox(width: 14),
+      itemBuilder: (context, i) => WaveEntrance(
+        index: i,
+        rise: 10,
+        child: _CoverCard(
+          track: tracks[i],
+          source: source,
+        ),
+      ),
+    );
+  }
+}
+
+class _CoverCard extends ConsumerStatefulWidget {
+  final GeneratedTrack track;
+  final String source;
+  const _CoverCard({
+    required this.track,
+    required this.source,
+  });
+  @override
+  ConsumerState<_CoverCard> createState() => _CoverCardState();
+}
+
+class _CoverCardState extends ConsumerState<_CoverCard> {
+  bool _hover = false;
+  bool _pressed = false;
+  @override
+  Widget build(BuildContext context) {
+    final dark = waveIsDark(context);
+    void play() => playGenerated(ref, context, widget.track,
+        sourceLabel: widget.source);
+    return WaveContextMenu(
+      items: () => waveTrackMenuItems(
+        context: context,
+        ref: ref,
+        title: widget.track.name,
+        artist: widget.track.artist,
+        artworkUrl: widget.track.artworkUrl,
+        videoId: widget.track.videoId,
+      ),
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        onEnter: (_) => setState(() => _hover = true),
+        onExit: (_) => setState(() {
+          _hover = false;
+          _pressed = false;
+        }),
+        child: GestureDetector(
+          onTapDown: (_) => setState(() => _pressed = true),
+          onTapUp: (_) => setState(() => _pressed = false),
+          onTapCancel: () => setState(() => _pressed = false),
+          onTap: play,
+          child: SizedBox(
+            width: 152,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                AnimatedScale(
+                  scale: _pressed ? 0.97 : (_hover ? 1.03 : 1.0),
+                  duration: waveMotion(context, WaveMotion.fast),
+                  curve: Curves.easeOutCubic,
+                  child: AnimatedContainer(
+                    duration: waveMotion(context, WaveMotion.normal),
+                    curve: Curves.easeOutCubic,
+                    decoration: BoxDecoration(
+                      borderRadius: WaveRadius.artworkRadius,
+                      boxShadow: [
+                        if (_hover) ...WaveElevation.lift(dark),
+                      ],
+                    ),
+                    child: Stack(
+                      children: [
+                        WaveArtwork(
+                          url: widget.track.artworkUrl,
+                          size: 152,
+                          radius: WaveRadius.artwork,
+                          title: widget.track.name,
+                          artist: widget.track.artist,
+                          label: widget.track.name,
+                        ),
+                        Positioned.fill(
+                          child: AnimatedOpacity(
+                            duration: waveMotion(context, WaveMotion.fast),
+                            opacity: _hover ? 1 : 0,
+                            child: Container(
+                              decoration: BoxDecoration(
+                                borderRadius:
+                                    WaveRadius.artworkRadius,
+                                gradient: LinearGradient(
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                  colors: [
+                                    Colors.transparent,
+                                    Colors.black
+                                        .withValues(alpha: 0.55),
+                                  ],
+                                ),
+                              ),
+                              child: Center(
+                                child: AnimatedScale(
+                                  scale: _hover ? 1.0 : 0.70,
+                                  duration: waveMotion(context, WaveMotion.fast),
+                                  curve: Curves.easeOutBack,
+                                  child: GestureDetector(
+                                    onTap: play,
+                                    child: Container(
+                                      width: 44,
+                                      height: 44,
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        color: waveAccent(context),
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: Colors.black
+                                                .withValues(
+                                                    alpha: 0.4),
+                                            blurRadius: 12,
+                                          ),
+                                        ],
+                                      ),
+                                      child: Icon(
+                                          WaveIcons.play,
+                                          size: 18,
+                                          color: waveOnAccent(context)),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(widget.track.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: WaveType.trackTitle.copyWith(fontSize: 12)),
+                WaveArtistLine(
+                    artist: widget.track.artist,
+                    style: WaveType.meta.copyWith(fontSize: 11)),
+                Text('Recently played',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: WaveType.meta.copyWith(
+                      fontSize: 10.5,
+                      color: waveTextTertiary(context),
+                    )),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Made For You: 220px editorial mix cards — overlay treatment, distinct
+/// from plain album cards.
+class _MixShelf extends StatelessWidget {
+  final List<GeneratedTrack> tracks;
+  final double side;
+  const _MixShelf({required this.tracks, required this.side});
+
+  static const _titles = ['Daily Mix 1', 'Daily Mix 2', 'Discovery Mix'];
+  static const _blurs = [
+    'Your heavy rotation, sequenced',
+    'Recent obsessions, extended',
+    'Branches off your taste',
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return WaveRail(
+      height: 296,
+      padding: EdgeInsets.symmetric(horizontal: side),
+      itemCount: tracks.length,
+      separatorBuilder: (_, _) => const SizedBox(width: 14),
+      itemBuilder: (context, i) {
+        final t = tracks[i];
+        return WaveEntrance(
+          index: i,
+          rise: 10,
+          child: _MixCard(
+            track: t,
+            title: _titles[i % _titles.length],
+            blurb: _blurs[i % _blurs.length],
+            badge: 'MIX 0${i + 1}',
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _MixCard extends ConsumerStatefulWidget {
+  final GeneratedTrack track;
+  final String title;
+  final String blurb;
+  final String badge;
+  const _MixCard({
+    required this.track,
+    required this.title,
+    required this.blurb,
+    required this.badge,
+  });
+  @override
+  ConsumerState<_MixCard> createState() => _MixCardState();
+}
+
+class _MixCardState extends ConsumerState<_MixCard> {
+  bool _hover = false;
+  bool _pressed = false;
+  @override
+  Widget build(BuildContext context) {
+    final dark = waveIsDark(context);
+    final accent = waveAccent(context);
+    void play() => playGenerated(ref, context, widget.track,
+        sourceLabel: widget.title);
+    return WaveContextMenu(
+      items: () => waveTrackMenuItems(
+        context: context,
+        ref: ref,
+        title: widget.track.name,
+        artist: widget.track.artist,
+        artworkUrl: widget.track.artworkUrl,
+        videoId: widget.track.videoId,
+      ),
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        onEnter: (_) => setState(() => _hover = true),
+        onExit: (_) => setState(() {
+          _hover = false;
+          _pressed = false;
+        }),
+        child: GestureDetector(
+          onTapDown: (_) => setState(() => _pressed = true),
+          onTapUp: (_) => setState(() => _pressed = false),
+          onTapCancel: () => setState(() => _pressed = false),
+          onTap: play,
+          child: SizedBox(
+            width: 220,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                AnimatedScale(
+                  scale: _pressed ? 0.97 : (_hover ? 1.03 : 1.0),
+                  duration: waveMotion(context, WaveMotion.fast),
+                  curve: Curves.easeOutCubic,
+                  child: AnimatedContainer(
+                    duration: waveMotion(context, WaveMotion.normal),
+                    curve: Curves.easeOutCubic,
+                    decoration: BoxDecoration(
+                      borderRadius: WaveRadius.artworkRadius,
+                      boxShadow: [
+                        if (_hover) ...WaveElevation.lift(dark),
+                      ],
+                    ),
+                    child: Stack(
+                      children: [
+                        WaveArtwork(
+                          url: widget.track.artworkUrl,
+                          videoId: widget.track.videoId,
+                          size: 220,
+                          radius: WaveRadius.artwork,
+                          title: widget.track.name,
+                          artist: widget.track.artist,
+                          label: widget.track.name,
+                        ),
+                        Positioned.fill(
+                          child: Container(
+                            decoration: BoxDecoration(
+                              borderRadius: WaveRadius.artworkRadius,
+                              gradient: LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                colors: [
+                                  Colors.transparent,
+                                  Colors.black.withValues(alpha: 0.72),
+                                ],
+                                stops: const [0.45, 1.0],
+                              ),
+                            ),
+                          ),
+                        ),
+                        Positioned(
+                          left: 12,
+                          right: 12,
+                          bottom: 10,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                widget.badge,
+                                style: WaveType.overline.copyWith(
+                                  fontSize: 9.5,
+                                  color: Colors.white.withValues(alpha: 0.75),
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                widget.title,
+                                style: WaveType.trackTitle.copyWith(
+                                  fontSize: 16,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Positioned.fill(
+                          child: AnimatedOpacity(
+                            opacity: _hover ? 1 : 0,
+                            duration: waveMotion(context, WaveMotion.fast),
+                            child: Container(
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                  colors: [
+                                    Colors.transparent,
+                                    Colors.black.withValues(alpha: 0.55),
+                                  ],
+                                ),
+                                borderRadius: WaveRadius.artworkRadius,
+                              ),
+                              child: Center(
+                                child: AnimatedScale(
+                                  scale: _hover ? 1.0 : 0.70,
+                                  duration: waveMotion(context, WaveMotion.fast),
+                                  curve: Curves.easeOutBack,
+                                  child: GestureDetector(
+                                    onTap: play,
+                                    child: Container(
+                                      width: 44,
+                                      height: 44,
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        color: accent,
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: Colors.black.withValues(
+                                              alpha: 0.4,
+                                            ),
+                                            blurRadius: 12,
+                                          ),
+                                        ],
+                                      ),
+                                      child: Icon(
+                                        WaveIcons.play,
+                                        size: 18,
+                                        color: onAccentFor(accent),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              const SizedBox(height: 8),
+              Text(widget.blurb,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: WaveType.meta.copyWith(
+                    color: dark
+                        ? WaveColors.textSecondary
+                        : WaveColors.lightTextSecondary,
+                  )),
+              Text('Featuring ${widget.track.artist}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: WaveType.meta.copyWith(
+                    fontSize: 11,
+                    color: waveTextTertiary(context),
+                  )),
+            ],
+          ),
+        ),
+      ),
+      ),
+    );
+  }
+}
+
+/// Albums For You: 152px artwork grid with hover quick-play + more.
+class _AlbumShelf extends StatelessWidget {
+  final List<GeneratedTrack> tracks;
+  final String source;
+  final double side;
+  const _AlbumShelf({
+    required this.tracks,
+    required this.source,
+    required this.side,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return WaveRail(
+      height: 214,
+      padding: EdgeInsets.symmetric(horizontal: side),
+      itemCount: tracks.length,
+      separatorBuilder: (_, _) => const SizedBox(width: 14),
+      itemBuilder: (context, i) => WaveEntrance(
+        index: i,
+        rise: 10,
+        child: _AlbumCard(
+          track: tracks[i],
+          source: source,
+        ),
+      ),
+    );
+  }
+}
+
+class _AlbumCard extends ConsumerStatefulWidget {
+  final GeneratedTrack track;
+  final String source;
+  const _AlbumCard({
+    required this.track,
+    required this.source,
+  });
+  @override
+  ConsumerState<_AlbumCard> createState() => _AlbumCardState();
+}
+
+class _AlbumCardState extends ConsumerState<_AlbumCard> {
+  bool _hover = false;
+  bool _pressed = false;
+  @override
+  Widget build(BuildContext context) {
+    final dark = waveIsDark(context);
+    void play() => playGenerated(ref, context, widget.track,
+        sourceLabel: widget.source);
+    final card = MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() {
+        _hover = false;
+        _pressed = false;
+      }),
+      child: GestureDetector(
+        onTapDown: (_) => setState(() => _pressed = true),
+        onTapUp: (_) => setState(() => _pressed = false),
+        onTapCancel: () => setState(() => _pressed = false),
+        onTap: play,
+        child: SizedBox(
+          width: 152,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              AnimatedScale(
+                scale: _pressed ? 0.97 : (_hover ? 1.03 : 1.0),
+                duration: waveMotion(context, WaveMotion.fast),
+                curve: Curves.easeOutCubic,
+                child: AnimatedContainer(
+                  duration: waveMotion(context, WaveMotion.normal),
+                  curve: Curves.easeOutCubic,
+                  decoration: BoxDecoration(
+                    borderRadius: WaveRadius.artworkRadius,
+                    boxShadow: [
+                      if (_hover) ...WaveElevation.lift(dark),
+                    ],
+                  ),
+                  child: Stack(
+                    children: [
+                      WaveArtwork(
+                        url: widget.track.artworkUrl,
+                        videoId: widget.track.videoId,
+                        size: 152,
+                        radius: WaveRadius.artwork,
+                        title: widget.track.name,
+                        artist: widget.track.artist,
+                        label: widget.track.name,
+                      ),
+                      Positioned.fill(
+                        child: AnimatedOpacity(
+                          opacity: _hover ? 1 : 0,
+                          duration: waveMotion(context, WaveMotion.fast),
+                          child: Container(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                colors: [
+                                  Colors.transparent,
+                                  Colors.black.withValues(alpha: 0.55),
+                                ],
+                              ),
+                              borderRadius: WaveRadius.artworkRadius,
+                            ),
+                            child: Center(
+                              child: AnimatedScale(
+                                scale: _hover ? 1.0 : 0.70,
+                                duration: waveMotion(context, WaveMotion.fast),
+                                curve: Curves.easeOutBack,
+                                child: GestureDetector(
+                                  onTap: play,
+                                  child: Container(
+                                    width: 44,
+                                    height: 44,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      color: waveAccent(context),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: Colors.black.withValues(
+                                            alpha: 0.4,
+                                          ),
+                                          blurRadius: 12,
+                                        ),
+                                      ],
+                                    ),
+                                    child: Icon(
+                                      WaveIcons.play,
+                                      size: 18,
+                                      color: waveOnAccent(context),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      if (_hover)
+                        Positioned(
+                          right: 6,
+                          top: 6,
+                          child: WaveOverflowButton(
+                            tooltip: 'More',
+                            items: waveTrackMenuItems(
+                              context: context,
+                              ref: ref,
+                              title: widget.track.name,
+                              artist: widget.track.artist,
+                              artworkUrl: widget.track.artworkUrl,
+                              videoId: widget.track.videoId,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(widget.track.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: WaveType.trackTitle.copyWith(fontSize: 12.5)),
+              WaveArtistLine(
+                  artist: widget.track.artist,
+                  style: WaveType.meta.copyWith(fontSize: 11.5)),
+            ],
+          ),
+        ),
+      ),
+    );
+    return WaveContextMenu(
+      items: () => waveTrackMenuItems(
+        context: context,
+        ref: ref,
+        title: widget.track.name,
+        artist: widget.track.artist,
+        artworkUrl: widget.track.artworkUrl,
+        videoId: widget.track.videoId,
+      ),
+      child: card,
+    );
+  }
+}
+
+/// Trending chart treatment: 20px ranked numeral + 42px art rows.
+class _ChartRow extends ConsumerWidget {
+  final GeneratedTrack track;
+  final int rank;
+  final List<GeneratedTrack> queueAll;
+  final int index;
+  const _ChartRow({
+    required this.track,
+    required this.rank,
+    required this.queueAll,
+    required this.index,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final dark = waveIsDark(context);
+    final accent = waveAccent(context);
+    return WaveContextMenu(
+      items: () => waveTrackMenuItems(
+        context: context,
+        ref: ref,
+        title: track.name,
+        artist: track.artist,
+        artworkUrl: track.artworkUrl,
+        videoId: track.videoId,
+      ),
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(
+        onTap: () => playGenerated(ref, context, track,
+            sourceLabel: 'Trending',
+            queueAll: queueAll,
+            startIndex: index),
+        child: Container(
+          padding:
+              const EdgeInsets.symmetric(horizontal: 4, vertical: 7),
+          color: Colors.transparent,
+          child: Row(
+            children: [
+              SizedBox(
+                width: 30,
+                child: Text('$rank',
+                    style: WaveType.numeral.copyWith(
+                      fontSize: 20,
+                      color: rank == 1
+                          ? accent
+                          : (dark
+                              ? WaveColors.textTertiary
+                              : WaveColors.lightTextTertiary),
+                    )),
+              ),
+              WaveArtwork(
+                url: track.artworkUrl,
+                videoId: track.videoId,
+                size: 42,
+                radius: WaveRadius.artwork,
+                title: track.name,
+                artist: track.artist,
+                label: track.name,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(track.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: WaveType.trackTitle
+                            .copyWith(fontSize: 13)),
+                    WaveArtistLine(
+                      artist: track.artist,
+                      style: WaveType.meta,
+                      extraTrailingSpans: [
+                        if (track.listeners.isNotEmpty)
+                          TextSpan(
+                            text: ' · ${track.listeners}',
+                            style: WaveType.meta,
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      )),
+    );
+  }
+}
+
+/// Fresh Finds: 40px compact rows.
+class _FreshRow extends ConsumerStatefulWidget {
+  final GeneratedTrack track;
+  const _FreshRow({required this.track});
+
+  @override
+  ConsumerState<_FreshRow> createState() => _FreshRowState();
+}
+
+class _FreshRowState extends ConsumerState<_FreshRow> {
+  bool _hover = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final track = widget.track;
+    final sourceLabel = 'Fresh finds';
+    final playing = ref.watch(
+          playbackServiceProvider.select((s) => s.current?.queueKey),
+        ) ==
+        track.key;
+    void play() => playGenerated(ref, context, track,
+        sourceLabel: sourceLabel);
+    return WaveContextMenu(
+      items: () => waveTrackMenuItems(
+        context: context,
+        ref: ref,
+        title: track.name,
+        artist: track.artist,
+        artworkUrl: track.artworkUrl,
+        videoId: track.videoId,
+      ),
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        onEnter: (_) => setState(() => _hover = true),
+        onExit: (_) => setState(() => _hover = false),
+        child: GestureDetector(
+          onTap: play,
+          child: Container(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+            color: Colors.transparent,
+            child: Row(
+              children: [
+                Stack(
+                  children: [
+                    WaveArtwork(
+                      url: track.artworkUrl,
+                      videoId: track.videoId,
+                      size: 40,
+                      radius: WaveRadius.artwork,
+                      title: track.name,
+                      artist: track.artist,
+                      label: track.name,
+                    ),
+                    Positioned.fill(
+                      child: AnimatedOpacity(
+                        opacity: _hover && !playing ? 1 : 0,
+                        duration: waveMotion(context, WaveMotion.fast),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: Colors.black
+                                .withValues(alpha: 0.55),
+                            borderRadius:
+                                WaveRadius.artworkRadius,
+                          ),
+                          child: GestureDetector(
+                            onTap: play,
+                            child: const Icon(
+                                WaveIcons.play,
+                                size: 16,
+                                color: Colors.white),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(track.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: WaveType.trackTitle.copyWith(
+                              fontSize: 13,
+                              color: playing
+                                  ? waveAccent(context)
+                                  : null)),
+                      WaveArtistLine(
+                        artist: track.artist,
+                        style: WaveType.meta,
+                      ),
+                    ],
+                  ),
+                ),
+                if (playing)
+                  Icon(WaveIcons.queue,
+                      size: 14, color: waveAccent(context)),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Artists For You: 120px circular artist tiles with hover ring.
+class _ArtistShelf extends StatelessWidget {
+  final List<GeneratedTrack> tracks;
+  const _ArtistShelf({required this.tracks});
+  @override
+  Widget build(BuildContext context) {
+    return WaveRail(
+      height: 168,
+      itemCount: tracks.length,
+      separatorBuilder: (_, _) => const SizedBox(width: 16),
+      itemBuilder: (context, i) {
+        final t = tracks[i];
+        return WaveEntrance(index: i, rise: 10, child: _ArtistTile(track: t));
+      },
+    );
+  }
+}
+
+class _ArtistTile extends StatefulWidget {
+  final GeneratedTrack track;
+  const _ArtistTile({required this.track});
+  @override
+  State<_ArtistTile> createState() => _ArtistTileState();
+}
+
+class _ArtistTileState extends State<_ArtistTile> {
+  /// Cover edge. The resting radius is half of it, which is a circle; the
+  /// hover radius is [WaveRadius.floating] — a rounded square, one rung
+  /// below a full circle (12 read as too square at this size).
+  static const double _size = 112;
+
+  bool _hover = false;
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final dark = waveIsDark(context);
+    // Hover reads as the shape relaxing: circle → rounded square (56 → 20
+    // on a 112px cover), plus the app's standard ×1.03 lift. No accent
+    // ring — accent means "selected/playing" everywhere else in the app.
+    final radius = BorderRadius.circular(
+      _hover ? WaveRadius.floating : _size / 2,
+    );
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() {
+        _hover = false;
+        _pressed = false;
+      }),
+      child: GestureDetector(
+        onTapDown: (_) => setState(() => _pressed = true),
+        onTapUp: (_) => setState(() => _pressed = false),
+        onTapCancel: () => setState(() => _pressed = false),
+        onTap: () => waveOpen(
+            context, '/artist/${Uri.encodeComponent(widget.track.artist)}'),
+        child: SizedBox(
+          width: 120,
+          child: Column(
+            children: [
+              AnimatedScale(
+                scale: _pressed ? 0.97 : (_hover ? 1.03 : 1.0),
+                duration: waveMotion(context, WaveMotion.fast),
+                curve: Curves.easeOutCubic,
+                child: AnimatedContainer(
+                  duration: waveMotion(context, WaveMotion.normal),
+                  curve: Curves.easeOutCubic,
+                  // The clip is what animates the shape, so the artwork
+                  // itself renders square (radius 0) and lets this own it.
+                  clipBehavior: Clip.antiAlias,
+                  decoration: BoxDecoration(
+                    borderRadius: radius,
+                    boxShadow: [
+                      if (_hover) ...WaveElevation.lift(dark),
+                    ],
+                  ),
+                  // Hairline as a *foreground* decoration: a plain
+                  // `border` would inset the cover by 1px (Container pads
+                  // by the border width), and this keeps the ring exactly
+                  // on the clip edge for both shapes.
+                  foregroundDecoration: BoxDecoration(
+                    borderRadius: radius,
+                    border: Border.all(color: waveDivider(context)),
+                  ),
+                  child: WaveArtwork(
+                    url: widget.track.artworkUrl,
+                    size: _size,
+                    radius: WaveRadius.structural,
+                    kind: ArtworkKind.artist,
+                    label: widget.track.artist,
+                    title: widget.track.artist,
+                    artist: widget.track.artist,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(widget.track.artist,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: WaveType.trackTitle
+                      .copyWith(fontSize: 12.5)),
+              Text('Artist',
+                  style: WaveType.meta.copyWith(
+                      fontSize: 11,
+                      color: waveTextTertiary(context))),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Friends Listening: compact 56px activity rows with avatar dot.
+class _FriendsStrip extends ConsumerWidget {
+  final List<FriendActivity> activities;
+  const _FriendsStrip({required this.activities});
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Column(
+      children: [
+        for (var i = 0; i < activities.length; i++)
+          _FriendRow(activity: activities[i]),
+      ],
+    );
+  }
+}
+
+class _FriendRow extends ConsumerWidget {
+  final FriendActivity activity;
+  const _FriendRow({required this.activity});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final t = activity.track;
+    final when = t.timestampMillis == null
+        ? ''
+        : relativeTime(DateTime.fromMillisecondsSinceEpoch(
+            t.timestampMillis!));
+    final avatar = activity.avatarUrl.isNotEmpty
+        ? activity.avatarUrl
+        : t.artworkUrl;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(
+        onTap: () => playGenerated(
+          ref,
+          context,
+          GeneratedTrack(
+            name: t.name,
+            artist: t.artist,
+            artworkUrl: t.artworkUrl,
+          ),
+          sourceLabel: 'Friends',
+        ),
+        child: Row(
+          children: [
+            WaveArtwork.circle(
+              url: avatar,
+              size: 44,
+              label: activity.friend,
+              title: activity.friend,
+              upgrade: false,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment:
+                    CrossAxisAlignment.start,
+                children: [
+                  Text('${activity.friend} · ${t.name}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: WaveType.trackTitle
+                          .copyWith(fontSize: 12.5)),
+                  Text(t.artist,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: WaveType.meta
+                          .copyWith(fontSize: 11.5)),
+                ],
+              ),
+            ),
+            if (when.isNotEmpty)
+              Text(when,
+                  style: WaveType.meta.copyWith(
+                      fontSize: 11,
+                      color:
+                          waveTextTertiary(context))),
+          ],
+        ),
+      )),
+    );
+  }
+}
+
+class _HomeSkeleton extends StatelessWidget {
+  const _HomeSkeleton();
+  @override
+  Widget build(BuildContext context) {
+    final bar = waveDivider(context).withValues(alpha: 0.5);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+            height: 240,
+            decoration: BoxDecoration(
+                color: bar,
+                borderRadius: WaveRadius.floatingRadius)),
+        const SizedBox(height: 26),
+        Container(
+            width: 180,
+            height: 14,
+            decoration: BoxDecoration(
+                color: bar,
+                borderRadius: WaveRadius.tinyRadius)),
+        const SizedBox(height: 10),
+        for (var i = 0; i < 6; i++)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: Row(
+              children: [
+                Container(
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                        color: bar,
+                        borderRadius: WaveRadius.artworkRadius)),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                          height: 11,
+                          width: double.infinity,
+                          decoration: BoxDecoration(
+                              color: bar,
+                              borderRadius:
+                                  WaveRadius.tinyRadius)),
+                      const SizedBox(height: 6),
+                      Container(
+                          height: 10,
+                          width: 140,
+                          decoration: BoxDecoration(
+                              color: bar,
+                              borderRadius:
+                                  WaveRadius.tinyRadius)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        const SizedBox(height: 26),
+        Container(
+            height: 140,
+            decoration: BoxDecoration(
+                color: bar,
+                borderRadius: WaveRadius.artworkRadius)),
+      ],
+    );
+  }
+}
+
+
+

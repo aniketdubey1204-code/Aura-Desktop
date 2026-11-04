@@ -1,0 +1,716 @@
+import 'dart:io';
+
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:fluent_ui/fluent_ui.dart';
+
+import '../../core/artwork/artwork_resolver.dart';
+import '../../core/artwork/official_artwork_service.dart';
+import '../theme/tokens.dart';
+import '../theme/wave_icons.dart';
+
+export '../../core/artwork/artwork_resolver.dart' show ArtworkKind;
+
+/// Canonical artwork primitive — pure image, no dashboard borders.
+///
+/// All artwork flows through [ArtworkResolver]: URL normalization, per-
+/// context resolution (rows ≈96px, grids ≈300px, Now Playing ≈640px),
+/// memory + disk caching, in-flight dedup, single timed retry, and a
+/// fallback chain (primary → [fallbackUrls] → generated tonal visual).
+/// Rapid track switches carry a generation counter so stale requests can
+/// never overwrite the current image. No stars, no generic error icons.
+///
+/// Official-source upgrade: when the primary URL is NOT from an official
+/// store CDN (YouTube video still, Last.fm crowd photo, …) and the widget
+/// carries title/artist metadata, the official cover/photo is resolved in
+/// the background (iTunes store covers for tracks/albums, Deezer press
+/// photos for artists) and hot-swapped in — the original image keeps
+/// showing until then and remains as fallback.
+class WaveArtwork extends StatefulWidget {
+  final String url;
+  final String videoId;
+  final List<String> fallbackUrls;
+  final double size;
+  final double radius;
+  final bool isCircle;
+  final String label;
+  final String title;
+  final String artist;
+
+  /// Optional content hint: [ArtworkKind.album] resolves via the album
+  /// catalog (exact collection match), [ArtworkKind.artist] via artist
+  /// photos. Defaults to artist when [isCircle], else track.
+  final ArtworkKind? kind;
+
+  /// When false, the official-source upgrade is skipped and [url] shows
+  /// as-is. Use for identity avatars (account photo, …) where a store
+  /// search on the label would swap in an unrelated artist's photo.
+  final bool upgrade;
+
+  const WaveArtwork({
+    super.key,
+    required this.url,
+    this.videoId = '',
+    this.fallbackUrls = const [],
+    required this.size,
+    this.radius = WaveRadius.artwork,
+    this.isCircle = false,
+    this.label = '',
+    this.title = '',
+    this.artist = '',
+    this.kind,
+    this.upgrade = true,
+  });
+
+  const WaveArtwork.circle({
+    super.key,
+    required this.url,
+    this.videoId = '',
+    this.fallbackUrls = const [],
+    required this.size,
+    this.label = '',
+    this.title = '',
+    this.artist = '',
+    this.upgrade = true,
+  })  : radius = 999,
+        isCircle = true,
+        kind = ArtworkKind.artist;
+
+  @override
+  State<WaveArtwork> createState() => _WaveArtworkState();
+}
+
+class _WaveArtworkState extends State<WaveArtwork> {
+  int _gen = 0;
+  int _attempt = 0;
+  int _chainIndex = 0;
+  List<String> _chain = const [];
+  double _lastDpr = 1.0;
+  String? _handledError;
+  String? _resolvedUrl;
+  bool _isResolving = false;
+  bool _upgradeAttempted = false;
+  bool _resolveFailed = false;
+
+  /// Effective content kind: explicit hint, else circle ⇒ artist.
+  ArtworkKind get _kind =>
+      widget.kind ??
+      (widget.isCircle ? ArtworkKind.artist : ArtworkKind.track);
+
+  /// [WaveArtwork.url] minus images that load fine but show nothing: the
+  /// Last.fm star placeholder and Deezer's blank-artist silhouette.
+  String get _primaryUrl {
+    final u = widget.url;
+    if (u.contains('2a96cbd8b46e442fc41c2b86b821562f') ||
+        u.contains('/artist//')) {
+      return '';
+    }
+    return u;
+  }
+
+  bool _fallbacksEqual(List<String> a, List<String> b) {
+    if (identical(a, b)) return true;
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    OfficialArtworkService.instance.addListener(_onArtworkCache);
+    _checkSynchronousArtwork();
+  }
+
+  /// The image this tile settled on last time, known synchronously:
+  /// official store art or a fallback resolved earlier this session.
+  /// Artist circles included — they used to skip this, so every revisit
+  /// painted the original photo first and then swapped to the press photo.
+  OfficialArtworkResult? _peekDisplay() {
+    final title = widget.title.isNotEmpty ? widget.title : widget.label;
+    final artist = widget.artist;
+    final service = OfficialArtworkService.instance;
+    switch (_kind) {
+      case ArtworkKind.artist:
+        final name = artist.isNotEmpty ? artist : title;
+        if (name.isEmpty) return null;
+        return service.peekDisplayArtist(name);
+      case ArtworkKind.album:
+        if (title.isEmpty) return null;
+        return service.peekDisplayAlbum(album: title, artist: artist);
+      case ArtworkKind.track:
+        if (title.isEmpty) return null;
+        return service.peekDisplayTrack(title: title, artist: artist);
+    }
+  }
+
+  void _checkSynchronousArtwork() {
+    // Identity avatars (account photo, friends) never take a store image:
+    // a user named like an artist would get that artist's photo.
+    if (!widget.upgrade) return;
+    if (_fileArtworkPath(widget.url) != null) return;
+    if (_kind == ArtworkKind.artist &&
+        OfficialArtworkService.isOfficialArtistPhoto(_primaryUrl)) {
+      return;
+    }
+    final hit = _peekDisplay();
+    if (hit != null && hit.artworkUrl.isNotEmpty) {
+      _resolvedUrl = hit.artworkUrl;
+      _resolveFailed = false;
+      _isResolving = false;
+    }
+  }
+
+  /// URLs a tile has shown successfully this session (insertion-ordered,
+  /// capped). Coming back to a page re-mounts its tiles; if the decoded
+  /// image was evicted from memory it reloads from disk, which takes a
+  /// frame or two. For these URLs that reload is painted as a quiet
+  /// surface tone with no fade, instead of the coloured initials tile
+  /// fading into the cover, which read as the artwork resetting.
+  static final Set<String> _shownUrls = <String>{};
+  static const int _shownUrlsCap = 3000;
+
+  String? _shownUrl;
+  DateTime _shownSince = DateTime.now();
+  final Set<String> _failedUrls = <String>{};
+
+  /// Records [_shownUrl] as seen if it stayed on screen long enough to
+  /// have loaded and never errored here.
+  void _commitShown() {
+    final url = _shownUrl;
+    if (url == null || url.isEmpty || _failedUrls.contains(url)) return;
+    if (DateTime.now().difference(_shownSince).inMilliseconds < 400) return;
+    _shownUrls.remove(url);
+    _shownUrls.add(url);
+    if (_shownUrls.length > _shownUrlsCap) {
+      _shownUrls.remove(_shownUrls.first);
+    }
+  }
+
+  @override
+  void dispose() {
+    _commitShown();
+    OfficialArtworkService.instance.removeListener(_onArtworkCache);
+    super.dispose();
+  }
+
+  /// Playback / another tile found a studio cover — swap this one too.
+  void _onArtworkCache() {
+    if (!mounted || !widget.upgrade) return;
+    if (_fileArtworkPath(widget.url) != null) return;
+    final hit = _peekDisplay();
+    if (hit == null || hit.artworkUrl.isEmpty) return;
+    if (_resolvedUrl == hit.artworkUrl) return;
+    setState(() {
+      _resolvedUrl = hit.artworkUrl;
+      _resolveFailed = false;
+      _isResolving = false;
+      final target =
+          (widget.size * _lastDpr).clamp(64, 1024).toDouble();
+      _chain = ArtworkResolver.resolve(
+        ArtworkRequest(
+          kind: _kind,
+          candidates: [
+            hit.artworkUrl,
+            _primaryUrl,
+            ...widget.fallbackUrls,
+          ],
+          label: widget.label,
+          targetPx: target,
+          videoId: widget.videoId,
+        ),
+      ).urls;
+      _chainIndex = 0;
+      _attempt = 0;
+    });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final dpr = MediaQuery.maybeDevicePixelRatioOf(context) ?? 1.0;
+    if (_chain.isEmpty || (dpr - _lastDpr).abs() > 0.01) {
+      _lastDpr = dpr;
+      _rebuildChain(dpr);
+    }
+  }
+
+  @override
+  void didUpdateWidget(WaveArtwork old) {
+    super.didUpdateWidget(old);
+    if (old.url != widget.url ||
+        old.title != widget.title ||
+        old.artist != widget.artist ||
+        old.videoId != widget.videoId ||
+        !_fallbacksEqual(old.fallbackUrls, widget.fallbackUrls) ||
+        old.size != widget.size ||
+        old.upgrade != widget.upgrade ||
+        old.label != widget.label) {
+      if (old.url != widget.url ||
+          old.title != widget.title ||
+          old.artist != widget.artist) {
+        _resolvedUrl = null;
+        _isResolving = false;
+        _upgradeAttempted = false;
+        _resolveFailed = false;
+        _checkSynchronousArtwork();
+      }
+      _rebuildChain(_lastDpr);
+    }
+  }
+
+  void _rebuildChain([double? dprOverride]) {
+    _gen++;
+    _attempt = 0;
+    _chainIndex = 0;
+    _handledError = null;
+    final dpr =
+        dprOverride ?? MediaQuery.maybeDevicePixelRatioOf(context) ?? 1.0;
+    _lastDpr = dpr;
+    final target = (widget.size * dpr).clamp(64, 1024).toDouble();
+    final candidates = [
+      if (_resolvedUrl != null && _resolvedUrl!.isNotEmpty) _resolvedUrl!,
+      _primaryUrl,
+      ...widget.fallbackUrls,
+    ];
+    final req = ArtworkRequest(
+      kind: _kind,
+      candidates: candidates,
+      label: widget.label,
+      targetPx: target,
+      videoId: widget.videoId,
+    );
+    _chain = ArtworkResolver.resolve(req).urls;
+
+    // Store-search kickoff runs post-frame, not in the build phase:
+    // a fresh page mounts N artworks in one frame (the settings-open
+    // trace showed ~7 WaveArtwork subtrees in a single BUILD), and
+    // starting N iTunes/Deezer resolutions synchronously inside that
+    // frame's didChangeDependencies piles store machinery onto the
+    // navigation frame. One frame later is visually identical.
+    final gen = _gen;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || gen != _gen) return;
+      _maybeUpgradeOfficial();
+    });
+  }
+
+  /// Proactive official-source upgrade: when the primary image is NOT
+  /// from an official store CDN (YouTube video still, Last.fm crowd
+  /// photo, …) resolve the official cover/photo in the background and
+  /// hot-swap it in. The current image keeps showing until then and
+  /// stays in the chain as fallback if the official source has no match.
+  void _maybeUpgradeOfficial() {
+    if (!widget.upgrade) return;
+    if (_fileArtworkPath(widget.url) != null) return;
+    if (_upgradeAttempted || _resolveFailed || _isResolving) return;
+    if (_resolvedUrl != null) return;
+    final title = widget.title.isNotEmpty ? widget.title : widget.label;
+    final artist = widget.artist;
+    // Per-kind metadata requirements — a bare label (e.g. a playlist
+    // name) must never trigger a store search that could swap in an
+    // unrelated "official" cover.
+    switch (_kind) {
+      case ArtworkKind.track:
+        if (title.isEmpty || artist.isEmpty) return;
+      case ArtworkKind.album:
+        if (title.isEmpty) return;
+      case ArtworkKind.artist:
+        if (artist.isEmpty && title.isEmpty) return;
+    }
+    // Album/track: skip if we already have a store sleeve.
+    // Artist circles: skip only if we already have a Deezer *artist*
+    // press photo — an iTunes album cover is official, but it is the
+    // wrong kind of image for an artist tile.
+    if (_kind == ArtworkKind.artist) {
+      if (OfficialArtworkService.isOfficialArtistPhoto(_primaryUrl)) {
+        return;
+      }
+    } else if (OfficialArtworkService.isOfficialArtwork(widget.url)) {
+      return;
+    }
+    _upgradeAttempted = true;
+    _checkAndResolveArtwork();
+  }
+
+  void _checkAndResolveArtwork() {
+    if (_isResolving || _resolveFailed) return;
+    final title = widget.title.isNotEmpty ? widget.title : widget.label;
+    final artist = widget.artist;
+    if (title.isEmpty && artist.isEmpty) return;
+
+    _isResolving = true;
+    final service = OfficialArtworkService.instance;
+    // Route by content kind: artist circles → Deezer press photos,
+    // albums → iTunes album catalog, tracks → iTunes song catalog.
+    final Future<OfficialArtworkResult?> task = switch (_kind) {
+      ArtworkKind.artist => service
+          .resolveArtistArtwork(artist.isNotEmpty ? artist : title),
+      ArtworkKind.album =>
+        service.resolveAlbumArtwork(
+            album: title, artist: artist, allowFallback: true),
+      ArtworkKind.track =>
+        service.resolveOfficialArtwork(
+            title: title, artist: artist, allowFallback: true),
+    };
+    task.then((res) {
+      if (!mounted) return;
+      _isResolving = false;
+      if (res != null && res.artworkUrl.isNotEmpty) {
+        final usable = _kind == ArtworkKind.artist
+            // Deezer photo, or the YouTube Music portrait fallback.
+            ? res.artworkUrl.startsWith('http')
+            : _kind != ArtworkKind.artist
+                // Store cover, or the YouTube Music cover fallback.
+                ? res.artworkUrl.startsWith('http')
+                : OfficialArtworkService.isOfficialArtwork(res.artworkUrl);
+        if (!usable) {
+          _resolveFailed = true;
+          return;
+        }
+        if (res.artworkUrl == _resolvedUrl) return;
+        setState(() {
+          _resolvedUrl = res.artworkUrl;
+          final target =
+              (widget.size * _lastDpr).clamp(64, 1024).toDouble();
+          // Official URL leads; previous candidates stay as fallbacks.
+          final req = ArtworkRequest(
+            kind: _kind,
+            candidates: [
+              res.artworkUrl,
+              _primaryUrl,
+              ...widget.fallbackUrls,
+            ],
+            label: widget.label,
+            targetPx: target,
+            videoId: widget.videoId,
+          );
+          _chain = ArtworkResolver.resolve(req).urls;
+          _chainIndex = 0;
+          _attempt = 0;
+        });
+      } else {
+        _failAndRetryLater();
+      }
+    }).catchError((_) {
+      if (mounted) {
+        _isResolving = false;
+        _failAndRetryLater();
+      }
+    });
+  }
+
+  bool _retriedResolve = false;
+
+  /// A miss is often transient (store quota, offline blip), so give the
+  /// tile one more try later instead of leaving a placeholder for good.
+  void _failAndRetryLater() {
+    _resolveFailed = true;
+    if (_retriedResolve) return;
+    _retriedResolve = true;
+    final gen = _gen;
+    Future<void>.delayed(const Duration(seconds: 8), () {
+      if (!mounted || gen != _gen || _resolvedUrl != null) return;
+      _resolveFailed = false;
+      _upgradeAttempted = false;
+      _maybeUpgradeOfficial();
+    });
+  }
+
+  String get _initials {
+    final text = widget.label.isNotEmpty
+        ? widget.label
+        : (widget.title.isNotEmpty ? widget.title : widget.artist);
+    final parts = text
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((s) => s.isNotEmpty)
+        .toList();
+    if (parts.isEmpty) return '';
+    if (parts.length == 1) {
+      final w = parts.first;
+      return w.substring(0, w.length >= 2 ? 2 : 1).toUpperCase();
+    }
+    return (parts[0][0] + parts[1][0]).toUpperCase();
+  }
+
+  Widget _fallback(BuildContext context, bool dark) {
+    final initials = _initials;
+    // Intentional tonal visual: label-hashed low-saturation duo-tone +
+    // small LastWave mark — never a star or error icon.
+    final seed = widget.label.isEmpty ? 0 : widget.label.hashCode;
+    final hue = ((seed % 360).abs()).toDouble();
+    final base = HSLColor.fromAHSL(
+      1.0,
+      hue,
+      dark ? 0.22 : 0.28,
+      dark ? 0.22 : 0.82,
+    ).toColor();
+    final deep = HSLColor.fromAHSL(
+      1.0,
+      (hue + 28) % 360,
+      dark ? 0.26 : 0.30,
+      dark ? 0.14 : 0.72,
+    ).toColor();
+    return AnimatedContainer(
+      duration: waveMotion(context, WaveMotion.normal),
+      curve: WaveMotion.standard,
+      width: widget.size,
+      height: widget.size,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [base, deep],
+        ),
+        borderRadius:
+            widget.isCircle ? null : BorderRadius.circular(widget.radius),
+        shape: widget.isCircle ? BoxShape.circle : BoxShape.rectangle,
+      ),
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (initials.isNotEmpty)
+              Text(
+                initials,
+                style: WaveType.sectionTitle.copyWith(
+                  fontSize: widget.size * 0.24,
+                  fontWeight: FontWeight.w700,
+                  color: dark
+                      ? Colors.white.withValues(alpha: 0.82)
+                      : Colors.black.withValues(alpha: 0.62),
+                ),
+              )
+            else
+              Icon(
+                WaveIcons.music,
+                size: widget.size * 0.30,
+                color: dark
+                    ? Colors.white.withValues(alpha: 0.55)
+                    : Colors.black.withValues(alpha: 0.45),
+              ),
+            SizedBox(height: widget.size * 0.06),
+            Container(
+              width: widget.size * 0.22,
+              height: 2,
+              decoration: BoxDecoration(
+                borderRadius: WaveRadius.tinyRadius,
+                color: (dark ? Colors.white : Colors.black)
+                    .withValues(alpha: 0.35),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _onError(int gen, int index, int attempt) async {
+    if (!mounted || gen != _gen || index != _chainIndex ||
+        attempt != _attempt) {
+      return;
+    }
+    final errorKey = '$gen|$index|$attempt';
+    if (_handledError == errorKey) return;
+    _handledError = errorKey;
+    _failedUrls.add(_chain[index]);
+    _shownUrls.remove(_chain[index]);
+    await ArtworkResolver.evict(_chain[index]);
+    if (!mounted || gen != _gen || index != _chainIndex ||
+        attempt != _attempt) {
+      return;
+    }
+    if (_chainIndex + 1 < _chain.length) {
+      setState(() => _chainIndex++);
+      return;
+    }
+    if (_attempt == 0) {
+      await Future<void>.delayed(const Duration(seconds: 2));
+      if (!mounted || gen != _gen) return;
+      setState(() {
+        _attempt = 1;
+        _chainIndex = 0;
+      });
+    } else if (!_isResolving && _resolvedUrl == null) {
+      _checkAndResolveArtwork();
+    }
+  }
+
+  /// Grid the requested decode edge snaps up to, in physical pixels.
+  static const int _decodeStep = 16;
+
+  /// Decode edge for [needed] physical px, snapped up to [_decodeStep].
+  ///
+  /// Snapping keeps a stable cache key per tile size instead of a new
+  /// decode for every fractional layout width, while staying within one
+  /// step of what the tile can actually paint — which is what keeps
+  /// `debugInvertOversizedImages` quiet (see the comment in [build]).
+  /// Never capped: the display size is the correct memory bound, and a
+  /// cap below it would leave the CDN's 1400px master to be decoded at
+  /// full size (the exact waste this replaces).
+  static int? _decodeBucket(int needed) {
+    if (needed <= 0) return null;
+    final snapped = ((needed + _decodeStep - 1) ~/ _decodeStep) * _decodeStep;
+    return snapped < _decodeStep ? _decodeStep : snapped;
+  }
+
+  /// Local cover: a filesystem path or a `file://` URI. Network URLs stay
+  /// on the cached-image path below.
+  String? _fileArtworkPath(String raw) {
+    final url = raw.trim();
+    if (url.isEmpty) return null;
+    if (url.startsWith('file:')) {
+      try {
+        final path = Uri.parse(url).toFilePath(windows: Platform.isWindows);
+        return path.isEmpty ? null : path;
+      } catch (_) {
+        return null;
+      }
+    }
+    if (url.startsWith('http://') ||
+        url.startsWith('https://') ||
+        url.startsWith('data:')) {
+      return null;
+    }
+    if (url.contains('://')) return null;
+    final windowsDrive = RegExp(r'^[a-zA-Z]:[\\/]');
+    final looksLikePath = url.contains('\\') ||
+        url.startsWith('/') ||
+        url.startsWith(r'\\') ||
+        windowsDrive.hasMatch(url);
+    if (!looksLikePath) return null;
+    return url;
+  }
+
+  Widget? _fileImage(BuildContext context, bool dark) {
+    final path = _fileArtworkPath(widget.url);
+    if (path == null) return null;
+    final file = File(path);
+    final image = file.existsSync()
+        ? Image.file(
+            file,
+            width: widget.size,
+            height: widget.size,
+            fit: BoxFit.cover,
+            errorBuilder: (context, _, _) => _fallback(context, dark),
+          )
+        : _fallback(context, dark);
+    if (widget.isCircle) {
+      return SizedBox(
+        width: widget.size,
+        height: widget.size,
+        child: ClipOval(child: image),
+      );
+    }
+    return SizedBox(
+      width: widget.size,
+      height: widget.size,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(widget.radius),
+        child: image,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final dark = waveIsDark(context);
+    final local = _fileImage(context, dark);
+    if (local != null) return local;
+    if (_chain.isEmpty || _chainIndex >= _chain.length) {
+      return _fallback(context, dark);
+    }
+    final gen = _gen;
+    final index = _chainIndex;
+    final attempt = _attempt;
+    final currentUrl = _chain[_chainIndex];
+    // DPR-aware decode sizing: decode at most the pixels we can paint.
+    //
+    // Never decode at the CDN's native size — official covers ship at
+    // 1400×1400 (≈7.8 MB RGBA each) even though the largest tile in the
+    // app is a ~480px now-playing hero; that pinned the imageCache to a
+    // handful of entries and made scrolling re-decode constantly.
+    //
+    // The requested edge is `size × dpr` snapped UP to [_decodeStep] so
+    // neighbouring sizes share a cache key. The step is deliberately fine
+    // (16px) rather than the old 320 / 640 / 1024 ladder: the ladder's
+    // 320px floor made a 112px artist tile decode 9× the pixels it can
+    // ever show, and that is exactly what Flutter's debug
+    // `debugInvertOversizedImages` ("Highlight oversized images" in
+    // DevTools / the rendering debug toggles) punishes — every image that
+    // decodes with ≥128 KB more than its display size is painted colour-
+    // inverted and mirrored. Artists For You, the artist grid and the
+    // artist page hero are all small tiles, so they flipped while larger
+    // covers mostly stayed under the allowance. Snapping to a 16px grid
+    // bounds the overshoot at ~32 × edge px², well inside the 32 768 px²
+    // (128 KB) allowance, so the toggle now highlights nothing.
+    final double logicalExtent = widget.size;
+    final double dpr =
+        MediaQuery.maybeDevicePixelRatioOf(context) ?? 1.0;
+    final int targetPhysical = (logicalExtent * dpr).ceil();
+    final int? targetCacheWidth = _decodeBucket(targetPhysical);
+    // On-disk copy must never be smaller than the decode bucket, or the
+    // smallest tier would decode by upscaling a 512px file. Keeps the
+    // original 512/1024 split.
+    final int diskCache = targetPhysical <= 320 ? 512 : 1024;
+    final isSmall = widget.size <= 56;
+    final isResolved = _resolvedUrl != null;
+    if (currentUrl != _shownUrl) {
+      _commitShown();
+      _shownUrl = currentUrl;
+      _shownSince = DateTime.now();
+    }
+    final seenBefore = _shownUrls.contains(currentUrl);
+    final noFade = isSmall || isResolved || seenBefore;
+    final image = RepaintBoundary(
+      child: CachedNetworkImage(
+        key: ValueKey('artwork|$_attempt'),
+        imageUrl: currentUrl,
+        width: widget.size,
+        height: widget.size,
+        memCacheWidth: targetCacheWidth,
+        memCacheHeight: targetCacheWidth,
+        maxWidthDiskCache: diskCache,
+        maxHeightDiskCache: diskCache,
+        fit: BoxFit.cover,
+        useOldImageOnUrlChange: true,
+        fadeInDuration: noFade ? Duration.zero : WaveMotion.fast,
+        fadeOutDuration: noFade ? Duration.zero : WaveMotion.fast,
+        placeholderFadeInDuration: Duration.zero,
+        placeholder: (context, _) => seenBefore
+            ? SizedBox(
+                width: widget.size,
+                height: widget.size,
+                child: ColoredBox(color: waveSurfaceOverlay(context)),
+              )
+            : _fallback(context, dark),
+        errorWidget: (context, _, _) {
+          WidgetsBinding.instance.addPostFrameCallback(
+              (_) => _onError(gen, index, attempt));
+          return _fallback(context, dark);
+        },
+      ),
+    );
+    if (widget.isCircle) {
+      return AnimatedContainer(
+        duration: waveMotion(context, WaveMotion.normal),
+        curve: WaveMotion.standard,
+        width: widget.size,
+        height: widget.size,
+        child: ClipOval(child: image),
+      );
+    }
+    return AnimatedContainer(
+      duration: waveMotion(context, WaveMotion.normal),
+      curve: WaveMotion.standard,
+      width: widget.size,
+      height: widget.size,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(widget.radius),
+        child: image,
+      ),
+    );
+  }
+}

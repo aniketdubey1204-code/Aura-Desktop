@@ -1,0 +1,208 @@
+import 'package:fluent_ui/fluent_ui.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+
+import '../../core/network/network_monitor.dart';
+import '../../features/addons/addon_api.dart';
+import '../../features/downloads/download_manager.dart';
+import '../../features/innertube/innertube_api.dart';
+import '../../features/innertube/yt_session_keeper.dart';
+import '../../features/lastfm/auth_repository.dart';
+import '../theme/tokens.dart';
+import 'buttons.dart';
+
+/// Global Fluent InfoBar host — non-blocking feedback docked above content.
+///
+/// Shows (highest priority first):
+/// - offline network
+/// - Last.fm session expired
+/// - addon daily quota spent (falls through to YouTube)
+/// - latest download done/error
+///
+/// Dismissible per-bar, auto-collapses when clear. Rendered by [WaveShell]
+/// directly under the title bar so it never blocks playback.
+/// One-shot "running in the tray" hint, set on first hide-to-tray.
+/// Session-scoped (resets on relaunch) — the pref itself lives in Prefs.
+final trayHintProvider = StateProvider<bool>((_) => false);
+
+class WaveInfoBarHost extends ConsumerStatefulWidget {
+  const WaveInfoBarHost({super.key});
+  @override
+  ConsumerState<WaveInfoBarHost> createState() => _WaveInfoBarHostState();
+}
+
+class _WaveInfoBarHostState extends ConsumerState<WaveInfoBarHost> {
+  bool _dismissedOffline = false;
+  bool _dismissedAuth = false;
+  bool _dismissedYt = false;
+  String? _dismissedDownloadKey;
+  String? _dismissedQuotaNotice;
+  bool _ytRecovering = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // The stale flag may already be set before this host mounts.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && ref.read(ytAuthStaleProvider)) _recoverYt();
+    });
+  }
+
+  /// A restart (every setup/portable update is one) often brings back
+  /// a stored YouTube jar Google has already rotated out. Before
+  /// telling the user to sign in again, try once per run to re-mint it
+  /// silently from the persisted WebView2 profile.
+  Future<void> _recoverYt() async {
+    if (_ytRecovering || YtSessionKeeper.autoAttempted) return;
+    if (!ref.read(ytConnectionProvider).connected) return;
+    setState(() => _ytRecovering = true);
+    try {
+      await YtSessionKeeper.autoRecover(ref);
+    } finally {
+      if (mounted) setState(() => _ytRecovering = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    ref.listen<bool>(ytAuthStaleProvider, (prev, stale) {
+      if (stale && prev != true) _recoverYt();
+    });
+    final online = ref.watch(networkMonitorProvider);
+    final auth = ref.watch(authRepositoryProvider);
+    final downloads = ref.watch(downloadManagerProvider);
+
+    final bars = <Widget>[];
+    if (ref.watch(trayHintProvider)) {
+      bars.add(InfoBar(
+        title: const Text('Playing in the tray'),
+        content: const Text(
+            'Closing hides LastWave — Quit from the tray menu to exit.'),
+        severity: InfoBarSeverity.info,
+        isLong: false,
+        onClose: () =>
+            ref.read(trayHintProvider.notifier).state = false,
+      ));
+    }
+    if (!online && !_dismissedOffline) {
+      bars.add(InfoBar(
+        title: const Text('You are offline'),
+        content: const Text('Charts and streaming may be unavailable.'),
+        severity: InfoBarSeverity.warning,
+        isLong: false,
+        onClose: () => setState(() => _dismissedOffline = true),
+      ));
+    }
+    // Guests chose keyless entry — never nag them about Last.fm.
+    if (auth.status != AuthStatus.signedIn &&
+        auth.status != AuthStatus.guest &&
+        !_dismissedAuth) {
+      bars.add(InfoBar(
+        title: const Text('Last.fm disconnected'),
+        content: const Text('Connect to keep scrobbling and picks.'),
+        severity: InfoBarSeverity.warning,
+        isLong: false,
+        action: WaveLink(
+          onPressed: () => context.go('/welcome'),
+          child: const Text('Connect'),
+        ),
+        onClose: () => setState(() => _dismissedAuth = true),
+      ));
+    }
+    // YouTube Music session the server has rejected. Not silent noise:
+    // library, history and uploads all stay empty until this is fixed.
+    if (ref.watch(ytConnectionProvider).connected &&
+        ref.watch(ytAuthStaleProvider) &&
+        _ytRecovering) {
+      bars.add(const InfoBar(
+        title: Text('Reconnecting YouTube Music…'),
+        content: Text('Refreshing the saved session in the background.'),
+        severity: InfoBarSeverity.info,
+        isLong: false,
+      ));
+    } else if (ref.watch(ytConnectionProvider).connected &&
+        ref.watch(ytAuthStaleProvider) &&
+        !_dismissedYt) {
+      bars.add(InfoBar(
+        title: const Text('YouTube Music session expired'),
+        content: const Text(
+            'Reconnect to load your library, history and uploads again.'),
+        severity: InfoBarSeverity.warning,
+        isLong: false,
+        action: WaveLink(
+          onPressed: () => context.go('/settings?section=integrations'),
+          child: const Text('Reconnect'),
+        ),
+        onClose: () => setState(() => _dismissedYt = true),
+      ));
+    }
+    final quotaNotice = ref.watch(addonNoticeProvider);
+    if (quotaNotice != null && _dismissedQuotaNotice != quotaNotice) {
+      bars.add(InfoBar(
+        title: const Text('Addon quota reached'),
+        content: Text('$quotaNotice Playing from YouTube instead.'),
+        severity: InfoBarSeverity.warning,
+        isLong: false,
+        onClose: () {
+          setState(() => _dismissedQuotaNotice = quotaNotice);
+          ref.read(addonNoticeProvider.notifier).state = null;
+        },
+      ));
+    }
+    DownloadEntry? latest;
+    for (final d in downloads) {
+      if (d.status == DownloadStatus.done ||
+          d.status == DownloadStatus.error) {
+        latest = d;
+      }
+    }
+    // Restored-at-boot rows are history (see DownloadManager._muted) —
+    // only entries that finished this session may announce.
+    final announcer = ref.read(downloadManagerProvider.notifier);
+    if (latest != null &&
+        _dismissedDownloadKey != latest.key &&
+        announcer.shouldAnnounce(latest.key)) {
+      final entry = latest;
+      bars.add(InfoBar(
+        title: Text(entry.status == DownloadStatus.done
+            ? 'Download complete'
+            : 'Download failed'),
+        content: Text('${entry.title} — ${entry.artist}'),
+        severity: entry.status == DownloadStatus.done
+            ? InfoBarSeverity.success
+            : InfoBarSeverity.error,
+        isLong: false,
+        action: WaveLink(
+          onPressed: () => context.go('/downloads'),
+          child: const Text('Open'),
+        ),
+        onClose: () {
+          announcer.muteAnnouncement(entry.key);
+          setState(() => _dismissedDownloadKey = entry.key);
+        },
+      ));
+    }
+    if (bars.isEmpty) return const SizedBox.shrink();
+    return Container(
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(color: waveDivider(context)),
+        ),
+      ),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      child: ConstrainedBox(
+        constraints:
+            const BoxConstraints(maxWidth: WaveDensity.contentMax),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (var i = 0; i < bars.length; i++) ...[
+              if (i > 0) const SizedBox(height: 6),
+              bars[i],
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
