@@ -6,15 +6,9 @@ on:
       - main
     tags:
       - "v*"
-    paths-ignore:
-      - '**.md'
-      - '**.yml'
   pull_request:
     branches:
       - main
-    paths-ignore:
-      - '**.md'
-      - '**.yml'
   workflow_dispatch:
 
 permissions:
@@ -100,8 +94,8 @@ jobs:
           ls -la "$KEYBINDER_LIB"
           "$TOOLS/linuxdeploy" --appimage-extract-and-run \
             --appdir AppDir \
-            -d linux/packaging/lastwave-appimage.desktop \
-            -i linux/packaging/lastwave.png \
+            -d linux/packaging/aura-appimage.desktop \
+            -i linux/packaging/aura.png \
             --plugin gtk \
             --library "$KEYBINDER_LIB"
           # linuxdeploy should have vendored keybinder via --library
@@ -199,7 +193,7 @@ jobs:
           # libwebkit: the /tmp replacement must fit (NUL-padded when
           # shorter). Fails the job if the string is absent or the
           # replacement is too long, so a broken image never ships.
-          python3 - "AppDir/usr/lib/libwebkit2gtk-4.1.so*" "/usr/lib/x86_64-linux-gnu/webkit2gtk-4.1" "/tmp/.lastwave-webkit/webkit2gtk-4.1" <<'PY'
+          python3 - "AppDir/usr/lib/libwebkit2gtk-4.1.so*" "/usr/lib/x86_64-linux-gnu/webkit2gtk-4.1" "/tmp/.aura-webkit/webkit2gtk-4.1" <<'PY'
           import glob, os, sys
           lib_pattern, old, new = sys.argv[1], sys.argv[2].encode(), sys.argv[3].encode()
           if len(new) > len(old):
@@ -231,8 +225,8 @@ jobs:
           #!/bin/sh
           HERE="$(dirname "$(readlink -f "$0")")"
           if [ -d "$HERE/usr/lib/webkit2gtk-4.1" ]; then
-            mkdir -p /tmp/.lastwave-webkit
-            ln -snf "$HERE/usr/lib/webkit2gtk-4.1" /tmp/.lastwave-webkit/webkit2gtk-4.1
+            mkdir -p /tmp/.aura-webkit
+            ln -snf "$HERE/usr/lib/webkit2gtk-4.1" /tmp/.aura-webkit/webkit2gtk-4.1
             export WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1
           fi
           if [ -d "$HERE/usr/lib/gio/modules" ]; then
@@ -287,8 +281,8 @@ jobs:
           echo "--- AppRun wrapper:"
           cat AppDir/AppRun
           "$TOOLS/appimagetool" --appimage-extract-and-run \
-            AppDir "lastwave_${VERSION}_x86_64.AppImage"
-          ls -la "lastwave_${VERSION}_x86_64.AppImage"
+            AppDir "aura_${VERSION}_x86_64.AppImage"
+          ls -la "aura_${VERSION}_x86_64.AppImage"
 
       # Ubuntu 22.04 ships mpv 0.34 whose SONAME is libmpv.so.1, so the
       # source-built media_kit plugins record NEEDED libmpv.so.1 — which
@@ -317,7 +311,7 @@ jobs:
       - name: Upload Linux Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: LastWave-Desktop-Linux
+          name: Aura-Desktop-Linux
           path: build/linux/x64/release/bundle/
 
       # System packages are release-only (v* tags): PR/push builds
@@ -334,25 +328,25 @@ jobs:
           go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
           export VERSION="${GITHUB_REF_NAME#v}"
           echo "Packaging version $VERSION"
-          ~/go/bin/nfpm package --config linux/packaging/nfpm.yaml --packager deb --target ./lastwave_${VERSION}_amd64.deb
-          ~/go/bin/nfpm package --config linux/packaging/nfpm.yaml --packager rpm --target ./lastwave_${VERSION}_x86_64.rpm
-          ls -la lastwave_${VERSION}_amd64.deb lastwave_${VERSION}_x86_64.rpm
+          ~/go/bin/nfpm package --config linux/packaging/nfpm.yaml --packager deb --target ./aura_${VERSION}_amd64.deb
+          ~/go/bin/nfpm package --config linux/packaging/nfpm.yaml --packager rpm --target ./aura_${VERSION}_x86_64.rpm
+          ls -la aura_${VERSION}_amd64.deb aura_${VERSION}_x86_64.rpm
 
       - name: Upload Linux Packages
         if: startsWith(github.ref, 'refs/tags/v')
         uses: actions/upload-artifact@v4
         with:
-          name: LastWave-Linux-Packages
+          name: Aura-Linux-Packages
           path: |
-            lastwave_*_amd64.deb
-            lastwave_*_x86_64.rpm
+            aura_*_amd64.deb
+            aura_*_x86_64.rpm
 
       - name: Upload Linux AppImage
         if: startsWith(github.ref, 'refs/tags/v')
         uses: actions/upload-artifact@v4
         with:
-          name: LastWave-Linux-AppImage
-          path: lastwave_*_x86_64.AppImage
+          name: Aura-Linux-AppImage
+          path: aura_*_x86_64.AppImage
 
   build-windows:
     name: Build Windows Bundle
@@ -382,7 +376,7 @@ jobs:
       - name: Upload Windows Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: LastWave-Desktop-Windows
+          name: Aura-Desktop-Windows
           path: build\windows\x64\runner\Release\
 
       # The single-file installer is release-only (v* tags): PR/push
@@ -464,21 +458,26 @@ jobs:
           path: dist
 
       - name: Download Linux packages
+        if: needs.build-linux.result == 'success'
         uses: actions/download-artifact@v4
         with:
-          name: LastWave-Linux-Packages
+          name: Aura-Linux-Packages
           path: dist
+        continue-on-error: true
 
       - name: Download Linux AppImage
+        if: needs.build-linux.result == 'success'
         uses: actions/download-artifact@v4
         with:
-          name: LastWave-Linux-AppImage
+          name: Aura-Linux-AppImage
           path: dist
+        continue-on-error: true
 
       - name: Download macOS archive
+        if: needs.build-macos.result == 'success'
         uses: actions/download-artifact@v4
         with:
-          name: LastWave-Desktop-macOS
+          name: Aura-Desktop-macOS
           path: dist
         continue-on-error: true
 
@@ -524,10 +523,10 @@ jobs:
       - name: Compress macOS Bundle
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          ditto -c -k --keepParent "build/macos/Build/Products/Release/LastWave.app" "lastwave_${VERSION}_macos-arm64.zip"
+          ditto -c -k --keepParent "build/macos/Build/Products/Release/Aura.app" "aura_${VERSION}_macos-arm64.zip"
 
       - name: Upload macOS Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: LastWave-Desktop-macOS
-          path: lastwave_*_macos-*.zip
+          name: Aura-Desktop-macOS
+          path: aura_*_macos-*.zip

@@ -15,6 +15,7 @@ import '../../core/artwork/artwork_resolver.dart';
 import '../../core/audio/stream_models.dart';
 import '../../features/lyrics/karaoke_lyrics_view.dart';
 import '../../features/player/playback_service.dart';
+import '../../features/connect/aura_connect_service.dart';
 import '../../features/podcasts/podcast_repository.dart';
 import '../components/ambient.dart';
 import '../components/animated_artwork_video.dart';
@@ -148,7 +149,19 @@ class _WaveNowPlayingPageState extends ConsumerState<WaveNowPlayingPage> {
   }
 
   Widget _buildPage(BuildContext context) {
-    final current = ref.watch(playbackServiceProvider.select((s) => s.current));
+    final localCurrent = ref.watch(playbackServiceProvider.select((s) => s.current));
+    final auraConnect = ref.watch(auraConnectProvider);
+    final current = localCurrent ??
+        (auraConnect.isRemoteActive && auraConnect.currentTrack != null
+            ? PlayableTrack(
+                title: auraConnect.currentTrack!.title,
+                artist: auraConnect.currentTrack!.artist,
+                album: auraConnect.currentTrack!.album,
+                artworkUrl: auraConnect.currentTrack!.artworkUrl,
+                videoId: auraConnect.currentTrack!.videoId,
+                duration: auraConnect.currentTrack!.duration,
+              )
+            : null);
 
     final visualizerEnabled = ref.watch(visualizerEnabledProvider);
 

@@ -142,11 +142,13 @@ class WavePlayerDock extends ConsumerWidget {
                   dockW: dockW,
                   narrow: narrow,
                   current: current,
-                  isPlaying: player.isPlaying,
-                  isBuffering: player.isBuffering,
+                  isPlaying: isRemote ? auraConnect.isPlaying : player.isPlaying,
+                  isBuffering: isRemote ? false : player.isBuffering,
                   jamLocked: jamLocked,
                   jamUnlockAt: jamUnlockAt,
                   notifier: notifier,
+                  isRemote: isRemote,
+                  remoteNotifier: auraConnectNotifier,
                 );
               }
               return Row(
@@ -453,6 +455,8 @@ class WavePlayerDock extends ConsumerWidget {
     required bool jamLocked,
     required String jamUnlockAt,
     required PlaybackService notifier,
+    bool isRemote = false,
+    AuraConnectNotifier? remoteNotifier,
   }) {
     return Center(
       child: ConstrainedBox(
@@ -465,19 +469,23 @@ class WavePlayerDock extends ConsumerWidget {
                   jamLocked ? 'Locked in Jam until $jamUnlockAt' : 'Previous',
               icon: WaveIcons.previous,
               large: true,
-              onTap: current == null || jamLocked ? null : notifier.previous,
+              onTap: (current == null && !isRemote) || jamLocked
+                  ? null
+                  : (isRemote ? remoteNotifier?.previous : notifier.previous),
             ),
             _PlayGlyph(
               playing: isPlaying,
               buffering: isBuffering,
-              enabled: current != null && !(jamLocked && isPlaying),
-              onTap: notifier.toggle,
+              enabled: (current != null || isRemote) && !(jamLocked && isPlaying),
+              onTap: isRemote ? remoteNotifier?.togglePlayPause : notifier.toggle,
             ),
             _Glyph(
               tooltip: jamLocked ? 'Locked in Jam until $jamUnlockAt' : 'Next',
               icon: WaveIcons.next,
               large: true,
-              onTap: current == null || jamLocked ? null : notifier.next,
+              onTap: (current == null && !isRemote) || jamLocked
+                  ? null
+                  : (isRemote ? remoteNotifier?.next : notifier.next),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -1167,7 +1175,12 @@ class _DockProgressState extends ConsumerState<_DockProgress> {
     final clamped = target.isNegative
         ? Duration.zero
         : (target > total ? total : target);
-    ref.read(playbackServiceProvider.notifier).seek(clamped);
+    final auraConnect = ref.read(auraConnectProvider);
+    if (auraConnect.isRemoteActive) {
+      ref.read(auraConnectProvider.notifier).seek(clamped);
+    } else {
+      ref.read(playbackServiceProvider.notifier).seek(clamped);
+    }
   }
 
   @override
@@ -1190,6 +1203,11 @@ class _DockProgressState extends ConsumerState<_DockProgress> {
               duration: s.duration,
             )));
     final notifier = ref.read(playbackServiceProvider.notifier);
+    final onSeekTarget = jamLive
+        ? null
+        : (auraConnect.isRemoteActive
+            ? ref.read(auraConnectProvider.notifier).seek
+            : notifier.seek);
     // Settings → Experimental swaps the timeline for a wave; the straight
     // bar stays the default so nothing changes for anyone who never opts in.
     final wavy = ref.watch(
@@ -1292,7 +1310,7 @@ class _DockProgressState extends ConsumerState<_DockProgress> {
                               buffered: clock.buffered,
                               total: clock.duration,
                               showThumb: hasDuration && !jamLive,
-                              onSeek: jamLive ? null : notifier.seek,
+                              onSeek: onSeekTarget,
                               baseColor: (dark ? Colors.white : Colors.black)
                                   .withValues(alpha: 0.12),
                               bufferedColor: (dark ? Colors.white : Colors.black)
@@ -1307,7 +1325,7 @@ class _DockProgressState extends ConsumerState<_DockProgress> {
                               progress: clock.position,
                               buffered: clock.buffered,
                               total: clock.duration,
-                              onSeek: jamLive ? null : notifier.seek,
+                              onSeek: onSeekTarget,
                               barHeight: 3,
                               thumbRadius: hasDuration && !jamLive ? 5 : 0,
                               thumbColor: dark ? Colors.white : Colors.black,

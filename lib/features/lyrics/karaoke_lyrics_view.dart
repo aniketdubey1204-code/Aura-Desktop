@@ -23,6 +23,7 @@ import '../../ui/theme/haze.dart';
 import '../../ui/theme/tokens.dart';
 import '../../ui/theme/wave_icons.dart';
 import '../player/playback_service.dart';
+import '../connect/aura_connect_service.dart';
 import 'lyrics_models.dart';
 import 'lyrics_providers.dart';
 import 'lyrics_translation.dart';
@@ -162,9 +163,14 @@ class _WaveKaraokeLyricsViewState extends ConsumerState<WaveKaraokeLyricsView>
     _lyricController = LyricController();
     _lyricController.setOnTapLineCallback((duration) {
       final seekTargetMs = duration.inMilliseconds + _offsetMs;
-      ref
-          .read(playbackServiceProvider.notifier)
-          .seek(Duration(milliseconds: math.max(0, seekTargetMs)));
+      final auraConnect = ref.read(auraConnectProvider);
+      if (auraConnect.isRemoteActive) {
+        ref.read(auraConnectProvider.notifier).seek(Duration(milliseconds: math.max(0, seekTargetMs)));
+      } else {
+        ref
+            .read(playbackServiceProvider.notifier)
+            .seek(Duration(milliseconds: math.max(0, seekTargetMs)));
+      }
       _lyricController.stopSelection();
       if (!_following) {
         setState(() => _following = true);
@@ -185,6 +191,10 @@ class _WaveKaraokeLyricsViewState extends ConsumerState<WaveKaraokeLyricsView>
     );
     _speedSub = ref.listenManual(
       playbackServiceProvider.select((s) => s.speed),
+      (_, _) => _syncPlaybackClock(),
+    );
+    ref.listenManual(
+      auraConnectProvider.select((s) => (pos: s.position, playing: s.isPlaying, remote: s.isRemoteActive)),
       (_, _) => _syncPlaybackClock(),
     );
     // NOTE: deliberately NOT calling _syncPlaybackClock() here. It reads
@@ -219,6 +229,10 @@ class _WaveKaraokeLyricsViewState extends ConsumerState<WaveKaraokeLyricsView>
   int _getCurrentPositionMs() {
     if (_ticker.isActive) {
       return _interpolatedPositionMs.value;
+    }
+    final auraConnect = ref.read(auraConnectProvider);
+    if (auraConnect.isRemoteActive) {
+      return auraConnect.position.inMilliseconds - _offsetMs;
     }
     final snap = ref.read(playbackServiceProvider);
     return snap.position.inMilliseconds - _offsetMs;
@@ -433,10 +447,18 @@ class _WaveKaraokeLyricsViewState extends ConsumerState<WaveKaraokeLyricsView>
   /// the position notifier, and the lyric controller, never setState, so
   /// it never schedules extra frames.
   void _syncPlaybackClock() {
-    final snap = ref.read(playbackServiceProvider);
-    final audioMs = snap.position.inMilliseconds;
-    _isPlaying = snap.isPlaying;
-    _speed = snap.speed <= 0 ? 1.0 : snap.speed;
+    final auraConnect = ref.read(auraConnectProvider);
+    final int audioMs;
+    if (auraConnect.isRemoteActive) {
+      audioMs = auraConnect.position.inMilliseconds;
+      _isPlaying = auraConnect.isPlaying;
+      _speed = 1.0;
+    } else {
+      final snap = ref.read(playbackServiceProvider);
+      audioMs = snap.position.inMilliseconds;
+      _isPlaying = snap.isPlaying;
+      _speed = snap.speed <= 0 ? 1.0 : snap.speed;
+    }
     final now = DateTime.now();
 
     if (!_isPlaying || !_ticker.isActive) {

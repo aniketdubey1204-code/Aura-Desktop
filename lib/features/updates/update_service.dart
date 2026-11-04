@@ -284,7 +284,7 @@ class UpdateService {
   final Dio _dio;
 
   static const String repoOwner = 'aniketdubey1204-code';
-  static const String repoName = 'LastWave-Desktop';
+  static const String repoName = 'Aura-Desktop';
   static const String releasesLatestUrl =
       'https://api.github.com/repos/$repoOwner/$repoName/releases/latest';
 

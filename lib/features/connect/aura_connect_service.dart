@@ -232,12 +232,33 @@ class AuraConnectNotifier extends StateNotifier<AuraConnectState> {
 
         _upsertDevice(device);
 
-        // If this device has active playback or we have no active device yet, pair automatically
+        // Instant parse from UDP broadcast packet for zero-latency reflection
         final playback = json['playback'] as Map<String, dynamic>?;
         final isPlaying = playback?['isPlaying'] as bool? ??
             json['isPlaying'] as bool? ??
             false;
-        final hasTrack = playback?['track'] != null || json['track'] != null;
+        final trackObj = playback?['track'] as Map<String, dynamic>?;
+        final hasTrack = trackObj != null;
+
+        if (playback != null && (state.activeDevice?.id == device.id || state.activeDevice == null)) {
+          final posMs = (playback['positionMs'] as num?)?.toInt() ?? 0;
+          final durMs = (playback['durationMs'] as num?)?.toInt() ?? 0;
+          final vol = (playback['volume'] as num?)?.toDouble() ?? 1.0;
+          final track = trackObj != null ? AuraRemoteTrack.fromJson(trackObj) : null;
+
+          if (hasTrack || isPlaying) {
+            state = state.copyWith(
+              activeDevice: device,
+              isRemoteActive: true,
+              isPlaying: isPlaying,
+              position: Duration(milliseconds: posMs),
+              duration: Duration(milliseconds: durMs),
+              volume: vol,
+              currentTrack: track,
+              clearTrack: track == null,
+            );
+          }
+        }
 
         if (isPlaying || (hasTrack && state.activeDevice == null)) {
           _setActiveDevice(device, autoSwitch: true);

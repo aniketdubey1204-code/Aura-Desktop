@@ -1,78 +1,64 @@
 <div align="center">
 
-<img src="lastwave-logo.png" alt="LastWave Logo" width="120" height="120" style="border-radius: 50%;" />
+<img src="assets/brand/aura-logo.png" alt="Aura Logo" width="128" height="128" style="border-radius: 28px;" />
 
-# LastWave
+# Aura Desktop
 
-**Next-Gen Lossless Music player with Algorithmic Smart Playlist Generator, Real-Time Synced Lyrics & Last.fm Scrobbler for Desktop.**
+**Next-Generation Lossless Music Player with Algorithmic Smart Playlists, Real-Time Synced Lyrics, Cross-Device Continuity & Last.fm Scrobbling.**
 
 <p align="center">
-  <a href="https://github.com/Clash-Projects/LastWave-Desktop/stargazers">
-    <img src="https://img.shields.io/github/stars/Clash-Projects/LastWave-Desktop?style=for-the-badge&color=ffd0b0&labelColor=2d2d2d" alt="Stars" />
+  <a href="https://github.com/aniketdubey1204-code/Aura-Desktop/releases">
+    <img src="https://img.shields.io/github/v/release/aniketdubey1204-code/Aura-Desktop?style=for-the-badge&color=1DB954&labelColor=202020" alt="Latest Release" />
   </a>
   <a href="#">
-    <img src="https://img.shields.io/badge/Client-Lossless%20Music-FF0000?style=for-the-badge&logo=lossless&logoColor=white&labelColor=2d2d2d" alt="Lossless Music Client" />
+    <img src="https://img.shields.io/badge/Audio-Lossless%20%26%20Hi--Res-1DB954?style=for-the-badge&logoColor=white&labelColor=202020" alt="Lossless Audio" />
   </a>
   <a href="#">
-    <img src="https://img.shields.io/badge/Scrobbler-Last.fm-D51007?style=for-the-badge&logo=lastdotfm&logoColor=white&labelColor=2d2d2d" alt="Last.fm Scrobbler" />
+    <img src="https://img.shields.io/badge/Continuity-Aura%20Connect-00B4D8?style=for-the-badge&logoColor=white&labelColor=202020" alt="Aura Connect" />
   </a>
   <a href="#">
-    <img src="https://img.shields.io/badge/Platform-Desktop-3DDC84?style=for-the-badge&logo=windows&logoColor=white&labelColor=2d2d2d" alt="Platform" />
+    <img src="https://img.shields.io/badge/Platforms-Windows%20%7C%20Linux%20%7C%20macOS-7209B7?style=for-the-badge&logoColor=white&labelColor=202020" alt="Platforms" />
   </a>
 </p>
 
 </div>
 
-<br/>
+---
 
-<div align="center">
-<img src="screenshots/homepage.png" alt="LastWave Homepage Screenshot" width="80%" style="border-radius: 14px; margin: 4px;"/>
-<img src="screenshots/player.png" alt="LastWave Lyrics Screenshot" width="80%" style="border-radius: 14px; margin: 4px;" />
-</div>
+## Overview
 
-<div>
-  <h2>Overview</h2>
-  <p>LastWave is a next-gen lossless music player for desktop that comes with an algorithmic smart playlist generator, real-time synced lyrics, and Last.fm scrobbler. It is designed to provide a seamless music listening experience with high-quality audio playback and intelligent playlist management.</p>
-</div>
+Aura Desktop is an audiophile-grade desktop music player engineered for seamless playback and complete ecosystem continuity. Connect with your YouTube Music or Spotify account, enjoy true bit-perfect lossless playback via WASAPI / libmpv, view live synchronized karaoke lyrics, and control music playing on any phone, Bluetooth speaker, or amplifier on your local network using **Aura Connect**.
 
-<div>
-  <h2>Features</h2>
-  <ul>
-    <li>Lossless music playback for high-quality audio experience.</li>
-    <li>Algorithmic smart playlist generator that creates playlists based on your listening habits.</li>
-    <li>Real-time synced lyrics display for an immersive music experience.</li>
-    <li>Last.fm scrobbler integration to track your listening history and discover new music.</li>
-    <li>YouTube Music integration for streaming and managing your favorite tracks.</li>
-  </ul>
-</div>
+---
 
-<!-- Getting Started
-Download the latest APK from the Releases or Actions tab.
-Install LastWave-v4.2.2-release.apk on your Android device (Android 7.0+).
-Connect your Last.fm account in Settings → Integrations to unlock the scrobbler, taste mixes, and personalized discovery radar.
-Enjoy ad-free streaming and smart playlist generation! -->
+## Key Features
 
-<div>
-  <h2>Installation</h2>
-  <p>To install LastWave on your desktop, follow these steps:</p>
-  <ol>
-    <li>Download the latest version of LastWave from the <a href="https://github.com/Clash-Projects/LastWave-Desktop/releases">Releases</a> tab.</li>
-    <li>Run the installer and follow the on-screen instructions.</li>
-  </ol>
-</div>
+- **Aura Connect (Seamless Device Continuity)**: Control playback from your PC when your phone is plugged in across the room or paired to a Bluetooth speaker. Live timeline sync, output route reporting ("Bluetooth: Speaker", "Phone speaker"), and bidirectional transport control.
+- **Pure Lossless & Hi-Res Playback**: Direct stream resolution and local caching backed by high-performance WASAPI and libmpv engines.
+- **Synced Karaoke & Word-by-Word Lyrics**: High-precision scrolling lyrics with translation, romanization, and synchronized timing.
+- **YouTube Music & Spotify Integration**: One-click Google sign-in and direct web integration for personal libraries, Liked Songs, mixes, and artist discographies.
+- **Last.fm Scrobbling**: Automatic scrobbler with offline queueing, real-time now-playing notifications, and personal taste radar.
+- **Fluent & Acrylic Glass Interface**: Responsive WinUI 3 inspired design with ambient album art glow, customizable themes, and keyboard shortcuts.
+- **Automix & Smart Queuing**: Intelligent harmonic mixing, beat transitions, and algorithmic recommendation engine.
 
+---
 
-## <img src="https://api.iconify.design/lucide:shield-alert.svg?color=%23FFB4A2" width="20" height="20" align="center" /> Disclaimer
+## Installation
 
-> [!NOTE]
-> **Educational & Research Notice**
->
-> LastWave is an open-source, non-commercial application developed strictly for research and educational purposes.
->
-> **No Affiliation & Content Policy**
-> - LastWave is an independent project and is **not affiliated with, endorsed, or sponsored by Google LLC, YouTube, YouTube Music, Spotify, Apple Inc., Last.fm, or any music service**.
-> - LastWave **does not host, stream from private servers, or distribute any copyrighted media**. All content and metadata are accessed directly from public endpoints in accordance with their respective terms. All trademarks belong to their respective owners.
+### Windows (10 / 11)
+- **Installer (Recommended)**: Download `aura_<version>_windows-x86_64-setup.exe` from [Releases](https://github.com/aniketdubey1204-code/Aura-Desktop/releases). Run the setup to install with Start Menu shortcuts and SMTC media flyout integration.
+- **Portable**: Download `aura_<version>_windows-x86_64-portable.zip`, extract to any folder, and run `aura_desktop.exe`.
 
-<div align="center">
-  <p>Built with ❤️ by <a href="https://github.com/mrinmoyhaloi">Mrinmoy</a>, <a href="https://github.com/SYR3X">Kehan</a> & <a href="https://github.com/ajisth69">Ajisth</a>.</p>
-</div>
+### Linux
+- **AppImage (Universal)**: Download `aura_<version>_x86_64.AppImage`, make it executable (`chmod +x`), and launch.
+- **Debian / Ubuntu**: `sudo dpkg -i aura_<version>_amd64.deb`
+- **Fedora / RHEL**: `sudo rpm -i aura_<version>_x86_64.rpm`
+
+### macOS
+- Download `aura_<version>_macos-arm64.zip` from [Releases](https://github.com/aniketdubey1204-code/Aura-Desktop/releases) and extract `Aura.app`.
+
+---
+
+## License
+
+Proprietary — All Rights Reserved.
