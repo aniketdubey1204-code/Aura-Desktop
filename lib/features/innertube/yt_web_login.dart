@@ -367,8 +367,7 @@ class YtWebLogin {
   /// Document-start compatibility shim for macOS only.
   ///
   /// Google's disallowed_useragent block keys off the embedded
-  /// browser fingerprint (WKWebView reports no 
-avigator.userAgentData
+  /// browser fingerprint (WKWebView reports no navigator.userAgentData
   /// and no window.chrome). This shim presents a coherent desktop
   /// Chrome surface before any page script runs.
   static const _macCompatShim = r'''

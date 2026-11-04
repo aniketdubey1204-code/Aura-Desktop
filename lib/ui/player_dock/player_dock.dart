@@ -477,7 +477,7 @@ class WavePlayerDock extends ConsumerWidget {
               playing: isPlaying,
               buffering: isBuffering,
               enabled: (current != null || isRemote) && !(jamLocked && isPlaying),
-              onTap: isRemote ? remoteNotifier?.togglePlayPause : notifier.toggle,
+              onTap: isRemote ? () => remoteNotifier?.togglePlayPause() : notifier.toggle,
             ),
             _Glyph(
               tooltip: jamLocked ? 'Locked in Jam until $jamUnlockAt' : 'Next',
