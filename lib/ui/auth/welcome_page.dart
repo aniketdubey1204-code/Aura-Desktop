@@ -199,8 +199,13 @@ class _WaveWelcomePageState extends ConsumerState<WaveWelcomePage> {
       }
     } catch (e) {
       if (!mounted) return;
-      setState(() => _error =
-          'Not approved yet — approve Aura in the browser, then retry.');
+      final msg = e.toString()
+          .replaceFirst('LastFmException: ', '')
+          .replaceFirst('Exception: ', '')
+          .trim();
+      setState(() => _error = msg.isNotEmpty && !msg.toLowerCase().contains('approval not completed')
+          ? msg
+          : 'Not approved yet — approve Aura in the browser, then retry.');
     } finally {
       if (mounted) {
         setState(() {

@@ -12,9 +12,18 @@ class LastFmSigner {
   LastFmSigner._();
 
   /// Strip whitespace/invisible chars; lowercase hex-looking keys.
+  /// Auto-sanitizes common visual misreadings for 32-character hex hashes
+  /// (such as Last.fm API keys and shared secrets where '1' is typed as 'l' or 'i',
+  /// or '0' is typed as 'o').
   static String normalizeKey(String raw) {
-    final stripped = raw.replaceAll(RegExp(r'\s+'), '');
-    return stripped.toLowerCase();
+    var stripped = raw.replaceAll(RegExp(r'\s+'), '').toLowerCase();
+    if (stripped.length == 32) {
+      stripped = stripped
+          .replaceAll('l', '1')
+          .replaceAll('i', '1')
+          .replaceAll('o', '0');
+    }
+    return stripped;
   }
 
   /// `md5(sorted(k+v concatenated) + secret)` lowercase hex.

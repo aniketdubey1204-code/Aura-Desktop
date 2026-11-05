@@ -86,7 +86,7 @@ class YtWebLogin {
   YtWebLogin._();
 
   static const _loginUrl =
-      'https://accounts.google.com/AccountChooser?service=youtube&continue=https%3A%2F%2Fwww.youtube.com%2Fsignin%3Faction_handle_signin%3Dtrue%26app%3Ddesktop%26hl%3Den%26next%3Dhttps%253A%252F%252Fmusic.youtube.com%252F&hl=en';
+      'https://accounts.google.com/ServiceLogin?service=youtube&hl=en&continue=https%3A%2F%2Fmusic.youtube.com%2F';
   static const _homeUrl = 'https://music.youtube.com/';
   static const _pollInterval = Duration(seconds: 2);
   static const _timeout = Duration(minutes: 10);
@@ -253,11 +253,13 @@ class YtWebLogin {
     if (t.contains('disallowed_useragent')) return true;
     if (t.contains('this browser or app')) return true;
     if (t.contains('try using a different browser')) return true;
+    if (t.contains('something went wrong')) return true;
     if ((t.contains("couldn't sign you in") ||
             t.contains('couldn’t sign you in')) &&
         (t.contains('secure') ||
             t.contains('different browser') ||
             t.contains('browser or app') ||
+            t.contains('went wrong') ||
             t.contains('disallowed'))) {
       return true;
     }
@@ -356,27 +358,25 @@ class YtWebLogin {
   static const _windowTitle = 'Aura YouTube Sign In';
 
   /// Appended to the system WebView's default UA before the first
-  /// navigation. On macOS the plugin hosts a WKWebView whose default
-  /// Safari UA (no `Chrome/` token) makes music.youtube.com render
-  /// "not optimized for your browser". The native call sets
-  /// `customUserAgent = defaultUA + suffix`, so the leading space
-  /// matters. Called once per window creation; the cached window
-  /// keeps it for reuse.
-  static const _macChromeSuffix = ' Chrome/131.0.0.0 Safari/537.36';
+  /// navigation. Ensures the embedded browser presents a standard Chrome
+  /// desktop client identifier across platforms.
+  static const _chromeSuffix = ' Chrome/131.0.0.0 Safari/537.36';
 
-  /// Document-start compatibility shim for macOS only.
+  /// Document-start compatibility shim for embedded WebViews.
   ///
-  /// Google's disallowed_useragent block keys off the embedded
-  /// browser fingerprint (WKWebView reports no navigator.userAgentData
-  /// and no window.chrome). This shim presents a coherent desktop
-  /// Chrome surface before any page script runs.
-  static const _macCompatShim = r'''
+  /// Google's disallowed_useragent and embedded browser blocks key off
+  /// the embedded browser fingerprint (missing navigator.userAgentData,
+  /// missing window.chrome.runtime, or webdriver flags). This shim presents
+  /// a coherent desktop Chrome surface before any page script runs.
+  static const _compatShim = r'''
 (function () {
   try {
-    var ua = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) '
-      + 'AppleWebKit/537.36 (KHTML, like Gecko) '
-      + 'Chrome/131.0.0.0 Safari/537.36';
+    var isWin = navigator.platform && navigator.platform.indexOf('Win') !== -1;
+    var ua = isWin
+      ? 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
+      : 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
     Object.defineProperty(navigator, 'userAgent', { get: function () { return ua; } });
+    Object.defineProperty(navigator, 'appVersion', { get: function () { return ua.replace('Mozilla/', ''); } });
     if (!navigator.userAgentData) {
       var brands = [
         { brand: 'Chromium', version: '131' },
@@ -388,14 +388,14 @@ class YtWebLogin {
           return {
             brands: brands,
             mobile: false,
-            platform: 'macOS',
+            platform: isWin ? 'Windows' : 'macOS',
             getHighEntropyValues: function () {
               return Promise.resolve({
                 brands: brands,
                 mobile: false,
-                platform: 'macOS',
-                platformVersion: '14.0.0',
-                architecture: 'arm',
+                platform: isWin ? 'Windows' : 'macOS',
+                platformVersion: isWin ? '15.0.0' : '14.0.0',
+                architecture: isWin ? 'x86' : 'arm',
                 bitness: '64',
                 uaFullVersion: '131.0.0.0'
               });
@@ -405,6 +405,7 @@ class YtWebLogin {
       });
     }
     if (!window.chrome) { window.chrome = { runtime: {} }; }
+    else if (!window.chrome.runtime) { window.chrome.runtime = {}; }
     Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
   } catch (e) {}
 })();
@@ -448,19 +449,18 @@ class YtWebLogin {
           titleBarHeight: 40,
           windowWidth: 480,
           windowHeight: 760,
+          openHidden: true,
           userDataFolderWindows:
               folder.isEmpty ? 'webview_window_WebView2' : folder,
         ),
       );
       _cachedWindow = w;
-      if (Platform.isMacOS) {
-        try {
-          w.addScriptToExecuteOnDocumentCreated(_macCompatShim);
-        } catch (_) {}
-        try {
-          await w.setApplicationNameForUserAgent(_macChromeSuffix);
-        } catch (_) {}
-      }
+      try {
+        w.addScriptToExecuteOnDocumentCreated(_compatShim);
+      } catch (_) {}
+      try {
+        await w.setApplicationNameForUserAgent(_chromeSuffix);
+      } catch (_) {}
       // If the window ever really dies, drop the cache so the next
       // sign-in creates a fresh window instead of talking to a dead one.
       unawaited(w.onClose.then((_) {

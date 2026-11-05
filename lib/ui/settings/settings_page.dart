@@ -640,9 +640,14 @@ class _InShellConnectState extends ConsumerState<_InShellConnect> {
       }
     } catch (e) {
       if (!mounted) return;
+      final msg = e.toString()
+          .replaceFirst('LastFmException: ', '')
+          .replaceFirst('Exception: ', '')
+          .trim();
       setState(
-        () => _error =
-            'Not approved yet — approve Aura in the browser, then retry.',
+        () => _error = msg.isNotEmpty && !msg.toLowerCase().contains('approval not completed')
+            ? msg
+            : 'Not approved yet — approve Aura in the browser, then retry.',
       );
     } finally {
       if (mounted) setState(() => _busy = false);

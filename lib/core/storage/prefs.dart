@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../network/lastfm_crypto.dart';
+
 /// Settings + session persistence.
 ///
 /// Key names mirror LastWave-native `SettingsPreferences` /
@@ -19,8 +21,10 @@ class Prefs {
   // Last.fm API key + shared secret (from last.fm/api/account/create),
   // stored here in SharedPreferences. All Last.fm features stay
   // disabled until both are set.
-  String get lastFmApiKey => _sp.getString('lw_lastfm_api_key') ?? '';
-  String get lastFmApiSecret => _sp.getString('lw_lastfm_api_secret') ?? '';
+  String get lastFmApiKey =>
+      LastFmSigner.normalizeKey(_sp.getString('lw_lastfm_api_key') ?? '');
+  String get lastFmApiSecret =>
+      LastFmSigner.normalizeKey(_sp.getString('lw_lastfm_api_secret') ?? '');
   bool get isLastFmConfigured =>
       lastFmApiKey.isNotEmpty && lastFmApiSecret.isNotEmpty;
 
@@ -28,8 +32,8 @@ class Prefs {
     required String apiKey,
     required String apiSecret,
   }) async {
-    await _sp.setString('lw_lastfm_api_key', apiKey);
-    await _sp.setString('lw_lastfm_api_secret', apiSecret);
+    await _sp.setString('lw_lastfm_api_key', LastFmSigner.normalizeKey(apiKey));
+    await _sp.setString('lw_lastfm_api_secret', LastFmSigner.normalizeKey(apiSecret));
   }
 
   Future<void> clearLastFmKeys() async {
