@@ -6,6 +6,7 @@ import '../../core/audio/stream_models.dart';
 import '../../core/storage/prefs.dart';
 import '../../features/library/playlists.dart';
 import '../../features/player/playback_service.dart';
+import '../../features/connect/aura_connect_service.dart';
 import '../theme/tokens.dart';
 import '../theme/wave_icons.dart';
 import 'artist_line.dart';
@@ -92,6 +93,18 @@ class _WaveTrackRowState extends ConsumerState<WaveTrackRow> {
           artworkUrl: widget.artworkUrl,
           videoId: widget.videoId,
         );
+    final auraConnect = ref.read(auraConnectProvider);
+    if (auraConnect.isRemoteActive && auraConnect.activeDevice != null) {
+      ref.read(auraConnectProvider.notifier).playTrack(
+        title: track.title,
+        artist: track.artist,
+        album: track.album ?? '',
+        artworkUrl: track.artworkUrl ?? '',
+        videoId: track.videoId ?? '',
+        duration: track.durationMs != null ? Duration(milliseconds: track.durationMs!) : null,
+      );
+      return;
+    }
     ref.read(playbackServiceProvider.notifier).play(
           track,
           sourceLabel: 'Track list',

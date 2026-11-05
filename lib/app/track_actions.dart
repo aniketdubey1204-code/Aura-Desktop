@@ -9,6 +9,7 @@ import '../features/feed/feed_repository.dart';
 import '../features/innertube/album_match.dart';
 import '../features/innertube/innertube_api.dart';
 import '../features/player/playback_service.dart';
+import '../features/connect/aura_connect_service.dart';
 import '../ui/navigation/wave_nav.dart';
 
 /// Start the queue; the playback service resolves each track on demand.
@@ -23,6 +24,18 @@ Future<void> playGenerated(
   List<GeneratedTrack>? queueAll,
   int startIndex = 0,
 }) async {
+  final auraConnect = ref.read(auraConnectProvider);
+  if (auraConnect.isRemoteActive && auraConnect.activeDevice != null) {
+    ref.read(auraConnectProvider.notifier).playTrack(
+      title: track.name,
+      artist: track.artist,
+      album: track.album ?? '',
+      artworkUrl: track.artworkUrl ?? '',
+      videoId: track.videoId,
+      duration: track.durationSeconds != null ? Duration(seconds: track.durationSeconds!) : null,
+    );
+    return;
+  }
   final player = ref.read(playbackServiceProvider.notifier);
   final list = queueAll ?? [track];
   final index = queueAll == null ? 0 : startIndex;

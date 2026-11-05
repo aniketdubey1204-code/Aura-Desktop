@@ -363,10 +363,34 @@ class AuraConnectNotifier extends StateNotifier<AuraConnectState> {
     final dev = state.activeDevice;
     if (dev == null) return;
     try {
-      final uri = Uri.parse('http://${dev.ip}:${dev.port}/aura-connect/action');
+      final action = actionData['action'] as String? ?? '';
+      final queryParams = <String, String>{};
+      if (action.isNotEmpty) queryParams['action'] = action;
+      if (actionData.containsKey('positionMs')) {
+        queryParams['positionMs'] = actionData['positionMs'].toString();
+      }
+      if (actionData.containsKey('value')) {
+        queryParams['value'] = actionData['value'].toString();
+      }
+      if (action == 'play_track' && actionData['track'] is Map) {
+        final t = actionData['track'] as Map;
+        if (t['title'] != null) queryParams['title'] = t['title'].toString();
+        if (t['artist'] != null) queryParams['artist'] = t['artist'].toString();
+        if (t['videoId'] != null && t['videoId'].toString().isNotEmpty) {
+          queryParams['videoId'] = t['videoId'].toString();
+        }
+      }
+
+      final uri = Uri.http(
+        '${dev.ip}:${dev.port}',
+        '/aura-connect/action',
+        queryParams.isNotEmpty ? queryParams : null,
+      );
+      final bodyBytes = utf8.encode(jsonEncode(actionData));
       final req = await _httpClient.postUrl(uri);
       req.headers.contentType = ContentType.json;
-      req.write(jsonEncode(actionData));
+      req.contentLength = bodyBytes.length;
+      req.add(bodyBytes);
       final resp = await req.close();
       await resp.drain();
       // Immediately refresh state

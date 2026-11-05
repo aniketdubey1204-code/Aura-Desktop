@@ -16,6 +16,7 @@ import '../../core/audio/stream_models.dart';
 import '../../features/equalizer/equalizer_panel.dart';
 import '../../features/podcasts/podcast_repository.dart';
 import '../../features/player/playback_service.dart';
+import '../../features/connect/aura_connect_service.dart';
 import '../../features/search/search_repository.dart';
 import '../mini_player/mini_player.dart';
 import '../components/infobar_host.dart';
@@ -330,15 +331,36 @@ class _WaveShellState extends ConsumerState<WaveShell> {
       event,
       WaveHotkeyActions(
         isTyping: () => waveIsTypingFocused(_searchFocus),
-        hasTrack: () => ref.read(playbackServiceProvider).current != null,
+        hasTrack: () =>
+            ref.read(playbackServiceProvider).current != null ||
+            (ref.read(auraConnectProvider).isRemoteActive &&
+                ref.read(auraConnectProvider).currentTrack != null),
         togglePlay: () {
-          if (mounted) ref.read(playbackServiceProvider.notifier).toggle();
+          if (!mounted) return;
+          final connect = ref.read(auraConnectProvider);
+          if (connect.isRemoteActive) {
+            ref.read(auraConnectProvider.notifier).togglePlayPause();
+          } else {
+            ref.read(playbackServiceProvider.notifier).toggle();
+          }
         },
         next: () {
-          if (mounted) ref.read(playbackServiceProvider.notifier).next();
+          if (!mounted) return;
+          final connect = ref.read(auraConnectProvider);
+          if (connect.isRemoteActive) {
+            ref.read(auraConnectProvider.notifier).next();
+          } else {
+            ref.read(playbackServiceProvider.notifier).next();
+          }
         },
         previous: () {
-          if (mounted) ref.read(playbackServiceProvider.notifier).previous();
+          if (!mounted) return;
+          final connect = ref.read(auraConnectProvider);
+          if (connect.isRemoteActive) {
+            ref.read(auraConnectProvider.notifier).previous();
+          } else {
+            ref.read(playbackServiceProvider.notifier).previous();
+          }
         },
         openPalette: () {
           if (mounted) _openPalette();
@@ -419,6 +441,12 @@ class _WaveShellState extends ConsumerState<WaveShell> {
 
   void _volumeByDelta(double delta) {
     if (!mounted) return;
+    final connect = ref.read(auraConnectProvider);
+    if (connect.isRemoteActive) {
+      final v = (connect.volume + delta).clamp(0.0, 1.0);
+      ref.read(auraConnectProvider.notifier).setVolume(v);
+      return;
+    }
     final snap = ref.read(playbackServiceProvider);
     if (snap.current == null) return;
     final v = (snap.volume + delta).clamp(0.0, 1.0);
