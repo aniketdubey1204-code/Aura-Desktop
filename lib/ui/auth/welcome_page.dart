@@ -1,3 +1,5 @@
+import '../../core/network/external_launcher.dart';
+import 'dart:async';
 import 'dart:io' show Platform;
 
 import 'package:fluent_ui/fluent_ui.dart';
@@ -111,7 +113,16 @@ class _WaveWelcomePageState extends ConsumerState<WaveWelcomePage> {
     }
   }
 
+  Timer? _lastFmPollTimer;
+
+  @override
+  void dispose() {
+    _lastFmPollTimer?.cancel();
+    super.dispose();
+  }
+
   Future<void> _beginWebAuth() async {
+    _lastFmPollTimer?.cancel();
     setState(() {
       _busy = true;
       _busyAction = _WelcomeBusyAction.lastfm;
@@ -128,12 +139,30 @@ class _WaveWelcomePageState extends ConsumerState<WaveWelcomePage> {
         'Opening Last.fm in your browser. Approve Aura there, then '
         'come back and press "I\'ve approved - finish sign-in".',
       );
-      final uri = Uri.parse(handshake.url);
-      try {
-        if (await canLaunchUrl(uri)) {
-          await launchUrl(uri, mode: LaunchMode.externalApplication);
+      await launchExternalBrowser(handshake.url);
+
+      _lastFmPollTimer = Timer.periodic(const Duration(seconds: 2), (timer) async {
+        if (!mounted || _handshake == null) {
+          timer.cancel();
+          return;
         }
-      } catch (_) {}
+        try {
+          await ref
+              .read(authRepositoryProvider.notifier)
+              .completeWebAuth(handshake.token);
+          timer.cancel();
+          if (mounted) {
+            await ref.read(authRepositoryProvider.notifier).enterGuestMode();
+            ref.invalidate(feedProvider);
+            setState(() {
+              _busy = false;
+              _busyAction = _WelcomeBusyAction.none;
+              _handshake = null;
+              _error = null;
+            });
+          }
+        } catch (_) {}
+      });
     } catch (e) {
       if (!mounted) return;
       setState(() => _error =
@@ -151,6 +180,7 @@ class _WaveWelcomePageState extends ConsumerState<WaveWelcomePage> {
   Future<void> _completeWebAuth() async {
     final handshake = _handshake;
     if (handshake == null) return;
+    _lastFmPollTimer?.cancel();
     setState(() {
       _busy = true;
       _busyAction = _WelcomeBusyAction.lastfm;
@@ -161,6 +191,12 @@ class _WaveWelcomePageState extends ConsumerState<WaveWelcomePage> {
           .read(authRepositoryProvider.notifier)
           .completeWebAuth(handshake.token);
       ref.invalidate(feedProvider);
+      if (mounted) {
+        setState(() {
+          _handshake = null;
+          _error = null;
+        });
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() => _error =

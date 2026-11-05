@@ -1,3 +1,4 @@
+import '../../core/network/external_launcher.dart';
 import '../components/buttons.dart';
 import '../components/inputs.dart';
 
@@ -565,8 +566,16 @@ class _InShellConnectState extends ConsumerState<_InShellConnect> {
   WebAuthHandshake? _handshake;
   bool _busy = false;
   String? _error;
+  Timer? _pollTimer;
+
+  @override
+  void dispose() {
+    _pollTimer?.cancel();
+    super.dispose();
+  }
 
   Future<void> _begin() async {
+    _pollTimer?.cancel();
     setState(() {
       _busy = true;
       _error = null;
@@ -577,12 +586,28 @@ class _InShellConnectState extends ConsumerState<_InShellConnect> {
           .beginWebAuth();
       if (!mounted) return;
       setState(() => _handshake = handshake);
-      final uri = Uri.parse(handshake.url);
-      try {
-        if (await canLaunchUrl(uri)) {
-          await launchUrl(uri, mode: LaunchMode.externalApplication);
+      await launchExternalBrowser(handshake.url);
+
+      _pollTimer = Timer.periodic(const Duration(seconds: 2), (timer) async {
+        if (!mounted || _handshake == null) {
+          timer.cancel();
+          return;
         }
-      } catch (_) {}
+        try {
+          await ref
+              .read(authRepositoryProvider.notifier)
+              .completeWebAuth(handshake.token);
+          timer.cancel();
+          if (mounted) {
+            ref.invalidate(feedProvider);
+            setState(() {
+              _busy = false;
+              _handshake = null;
+              _error = null;
+            });
+          }
+        } catch (_) {}
+      });
     } catch (e) {
       if (!mounted) return;
       setState(
@@ -597,6 +622,7 @@ class _InShellConnectState extends ConsumerState<_InShellConnect> {
   Future<void> _finish() async {
     final handshake = _handshake;
     if (handshake == null) return;
+    _pollTimer?.cancel();
     setState(() {
       _busy = true;
       _error = null;
@@ -606,6 +632,12 @@ class _InShellConnectState extends ConsumerState<_InShellConnect> {
           .read(authRepositoryProvider.notifier)
           .completeWebAuth(handshake.token);
       ref.invalidate(feedProvider);
+      if (mounted) {
+        setState(() {
+          _handshake = null;
+          _error = null;
+        });
+      }
     } catch (e) {
       if (!mounted) return;
       setState(
