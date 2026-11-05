@@ -195,7 +195,7 @@ class _GoogleDeviceAuthDialogState
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(FluentIcons.check_mark, size: 36, color: Colors.green),
+            Icon(FluentIcons.check_mark, size: 36, color: Colors.green),
             const SizedBox(height: 12),
             Text(
               'Connected as $_connectedName',
@@ -224,10 +224,10 @@ class _GoogleDeviceAuthDialogState
         Container(
           padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
           decoration: BoxDecoration(
-            color: waveSurfaceSecondary(context),
+            color: waveSurface(context),
             borderRadius: BorderRadius.circular(8),
             border: Border.all(
-              color: waveBorderColor(context),
+              color: waveOutline(context),
               width: 1,
             ),
           ),

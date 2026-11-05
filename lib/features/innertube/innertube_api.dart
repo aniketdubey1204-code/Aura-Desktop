@@ -2084,7 +2084,6 @@ class InnerTubeMusicApi {
       photoUrl: picture,
       connectedAtMillis: DateTime.now().millisecondsSinceEpoch,
     );
-    notifyListeners();
   }
 
   Future<void> signOut() async {
