@@ -449,7 +449,6 @@ class YtWebLogin {
           titleBarHeight: 40,
           windowWidth: 480,
           windowHeight: 760,
-          openHidden: true,
           userDataFolderWindows:
               folder.isEmpty ? 'webview_window_WebView2' : folder,
         ),
