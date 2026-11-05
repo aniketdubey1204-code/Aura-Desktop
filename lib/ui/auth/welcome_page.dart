@@ -11,6 +11,7 @@ import '../../app/accessibility.dart';
 import '../../core/storage/prefs.dart';
 import '../../features/home/home_providers.dart';
 import '../../features/innertube/yt_auth_actions.dart';
+import '../../features/innertube/google_device_auth_dialog.dart';
 import '../../features/lastfm/auth_repository.dart';
 import '../components/buttons.dart';
 import '../components/inputs.dart';
@@ -45,7 +46,7 @@ class _WaveWelcomePageState extends ConsumerState<WaveWelcomePage> {
       _error = null;
     });
     try {
-      final ok = await ytWebSignIn(context, ref, showSuccessDialog: false);
+      final ok = await showGoogleDeviceAuthDialog(context, ref);
       if (ok) {
         await ref.read(authRepositoryProvider.notifier).enterGuestMode();
         ref.invalidate(feedProvider);
@@ -152,7 +153,6 @@ class _WaveWelcomePageState extends ConsumerState<WaveWelcomePage> {
               .completeWebAuth(handshake.token);
           timer.cancel();
           if (mounted) {
-            await ref.read(authRepositoryProvider.notifier).enterGuestMode();
             ref.invalidate(feedProvider);
             setState(() {
               _busy = false;
@@ -199,8 +199,16 @@ class _WaveWelcomePageState extends ConsumerState<WaveWelcomePage> {
       }
     } catch (e) {
       if (!mounted) return;
+      final prefs = ref.read(prefsProvider);
+      if (prefs.username.isNotEmpty && prefs.sessionKey.isNotEmpty) {
+        setState(() {
+          _handshake = null;
+          _error = null;
+        });
+        return;
+      }
       final msg = e.toString()
-          .replaceFirst('LastFmException: ', '')
+          .replaceAll(RegExp(r'LastFmException(\\(\\d+\\))?:\\s*'), '')
           .replaceFirst('Exception: ', '')
           .trim();
       setState(() => _error = msg.isNotEmpty && !msg.toLowerCase().contains('approval not completed')

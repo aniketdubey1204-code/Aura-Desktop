@@ -10,6 +10,8 @@ class SecureStore {
   static const _ytCookies = 'lastwave.yt_cookies';
   static const _ytProfiles = 'lastwave.yt_profiles';
   static const _ytActive = 'lastwave.yt_active';
+  static const _ytOAuthAccessToken = 'lastwave.yt_oauth_access';
+  static const _ytOAuthRefreshToken = 'lastwave.yt_oauth_refresh';
   static const _spotifySpDc = 'lastwave.spotify_sp_dc';
 
   final FlutterSecureStorage _storage;
@@ -57,6 +59,12 @@ class SecureStore {
 
   Future<String?> readYtActive() => _read(_ytActive);
   Future<void> writeYtActive(String? v) => _write(_ytActive, v);
+
+  Future<String?> readYtOAuthAccessToken() => _read(_ytOAuthAccessToken);
+  Future<void> writeYtOAuthAccessToken(String? v) => _write(_ytOAuthAccessToken, v);
+
+  Future<String?> readYtOAuthRefreshToken() => _read(_ytOAuthRefreshToken);
+  Future<void> writeYtOAuthRefreshToken(String? v) => _write(_ytOAuthRefreshToken, v);
 
   /// Spotify `sp_dc` session cookie (WebView sign-in or pasted).
   Future<String?> readSpotifySpDc() => _read(_spotifySpDc);

@@ -15,6 +15,7 @@ import '../../ui/theme/tokens.dart';
 import 'innertube_api.dart';
 import 'yt_library_providers.dart';
 import 'yt_web_login.dart';
+import 'google_device_auth_dialog.dart';
 
 Future<void> refocusMain() async {
   try {
@@ -539,3 +540,10 @@ Future<bool> ytConnectWithCookies(
   }
   return false;
 }
+
+/// Sign in to YouTube Music via Google Device Authorization Grant (external browser).
+Future<bool> ytGoogleDeviceSignIn(
+  BuildContext context,
+  WidgetRef ref,
+) =>
+    showGoogleDeviceAuthDialog(context, ref);

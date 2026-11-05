@@ -25,6 +25,7 @@ import '../../features/innertube/yt_library_providers.dart';
 import '../../features/innertube/yt_session_keeper.dart';
 import '../../features/innertube/yt_web_login.dart';
 import '../../features/innertube/yt_auth_actions.dart';
+import '../../features/innertube/google_device_auth_dialog.dart';
 import '../components/ambient.dart' show AmbientStyle, ambientStyleProvider;
 import '../components/artwork.dart';
 import '../components/select.dart';
@@ -502,8 +503,11 @@ class _Account extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final auth = ref.watch(authRepositoryProvider);
     final prefs = ref.watch(prefsProvider);
-    final signedIn = auth.username.isNotEmpty;
-    final guest = auth.status == AuthStatus.guest || prefs.isGuest;
+    final effectiveUsername =
+        auth.username.isNotEmpty ? auth.username : prefs.username;
+    final signedIn = effectiveUsername.isNotEmpty &&
+        (auth.status == AuthStatus.signedIn || prefs.sessionKey.isNotEmpty);
+    final guest = !signedIn && (auth.status == AuthStatus.guest || prefs.isGuest);
     return _Group(
       id: 'lastfm.connection',
       title: 'Last.fm connection',
@@ -520,7 +524,7 @@ class _Account extends ConsumerWidget {
                   children: [
                     Text(
                       signedIn
-                          ? auth.username
+                          ? effectiveUsername
                           : (guest ? 'Guest mode' : 'Not connected'),
                       style: WaveType.trackTitle,
                     ),
@@ -1572,6 +1576,71 @@ class _ScrobblerState extends ConsumerState<_Scrobbler> {
 
 /// Spotify account: two sign-in routes (system WebView, pasted `sp_dc`),
 /// connection state, Canvas toggle.
+class _LastFmIntegrationCard extends ConsumerWidget {
+  const _LastFmIntegrationCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final auth = ref.watch(authRepositoryProvider);
+    final prefs = ref.watch(prefsProvider);
+    final effectiveUsername =
+        auth.username.isNotEmpty ? auth.username : prefs.username;
+    final signedIn = effectiveUsername.isNotEmpty &&
+        (auth.status == AuthStatus.signedIn || prefs.sessionKey.isNotEmpty);
+
+    return Row(
+      children: [
+        const Icon(FluentIcons.contact, size: 18),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                signedIn ? effectiveUsername : 'Not connected',
+                style: WaveType.trackTitle,
+              ),
+              Text(
+                signedIn
+                    ? 'Last.fm connected • Scrobbling enabled'
+                    : (prefs.isLastFmConfigured
+                        ? 'Connect to scrobble and track listening history'
+                        : 'API keys required — configure in Last.fm tab'),
+                style: WaveType.meta,
+              ),
+            ],
+          ),
+        ),
+        if (signedIn)
+          WaveButton(
+            onPressed: () => signOutEverywhere(ref),
+            child: const Text('Sign out'),
+          )
+        else ...[
+          if (prefs.isLastFmConfigured) ...[
+            WaveFilledButton(
+              onPressed: () async {
+                final handshake = await ref
+                    .read(authRepositoryProvider.notifier)
+                    .beginWebAuth();
+                await launchExternalBrowser(handshake.url);
+              },
+              child: const Text('Connect with Last.fm'),
+            ),
+          ] else ...[
+            WaveButton(
+              onPressed: () {
+                launchExternalBrowser('https://www.last.fm/api/account/create');
+              },
+              child: const Text('Get API Keys'),
+            ),
+          ],
+        ],
+      ],
+    );
+  }
+}
+
 class _SpotifyCard extends ConsumerWidget {
   final Future<void> Function(Future<void> Function(Prefs)) onUpdate;
   const _SpotifyCard({required this.onUpdate});
@@ -1606,6 +1675,11 @@ class _SpotifyCard extends ConsumerWidget {
               WaveButton(
                 onPressed: () => spotifyConnectWithCookie(context, ref),
                 child: const Text('Use cookies'),
+              ),
+              const SizedBox(width: 8),
+              WaveButton(
+                onPressed: () => spotifyConnectViaBrowser(context, ref),
+                child: const Text('Open in Browser'),
               ),
               const SizedBox(width: 8),
               WaveFilledButton(
@@ -1683,6 +1757,13 @@ class _Ytm extends ConsumerWidget {
                     ),
                   ],
                 ),
+        ),
+        const SizedBox(height: 16),
+        _Group(
+          id: 'integrations.lastfm',
+          title: 'Last.fm',
+          subtitle: 'Scrobbling, listening stats and recommendations',
+          child: const _LastFmIntegrationCard(),
         ),
         const SizedBox(height: 16),
         _Group(
@@ -1824,7 +1905,7 @@ class _Ytm extends ConsumerWidget {
   /// WebView, waits for login, captures cookies automatically, then
   /// runs the shared roster upsert + chooser tail.
   Future<void> _ytConnect(BuildContext context, WidgetRef ref) async {
-    await ytWebSignIn(context, ref);
+    await showGoogleDeviceAuthDialog(context, ref);
   }
 }
 

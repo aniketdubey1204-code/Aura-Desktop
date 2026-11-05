@@ -74,6 +74,13 @@ class AuthRepository extends StateNotifier<AuthState> {
   /// Keyless entry: enter the shell without Last.fm keys or session.
   /// Sticky via Prefs; cleared by full sign-out and by real sessions.
   Future<void> enterGuestMode() async {
+    if (_prefs.username.isNotEmpty && _prefs.sessionKey.isNotEmpty) {
+      state = AuthState(
+        status: AuthStatus.signedIn,
+        username: _prefs.username,
+      );
+      return;
+    }
     await _prefs.setGuestMode(true);
     state = const AuthState(status: AuthStatus.guest);
   }

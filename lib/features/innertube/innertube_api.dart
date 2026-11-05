@@ -304,6 +304,8 @@ class YtConnection {
   final int connectedAtMillis;
   final String profileEmail;
   final String activePageId;
+  final String oauthAccessToken;
+  final String oauthRefreshToken;
 
   const YtConnection({
     this.connected = false,
@@ -314,7 +316,34 @@ class YtConnection {
     this.connectedAtMillis = 0,
     this.profileEmail = '',
     this.activePageId = '',
+    this.oauthAccessToken = '',
+    this.oauthRefreshToken = '',
   });
+
+  YtConnection copyWith({
+    bool? connected,
+    String? cookies,
+    String? accountName,
+    String? channelHandle,
+    String? photoUrl,
+    int? connectedAtMillis,
+    String? profileEmail,
+    String? activePageId,
+    String? oauthAccessToken,
+    String? oauthRefreshToken,
+  }) =>
+      YtConnection(
+        connected: connected ?? this.connected,
+        cookies: cookies ?? this.cookies,
+        accountName: accountName ?? this.accountName,
+        channelHandle: channelHandle ?? this.channelHandle,
+        photoUrl: photoUrl ?? this.photoUrl,
+        connectedAtMillis: connectedAtMillis ?? this.connectedAtMillis,
+        profileEmail: profileEmail ?? this.profileEmail,
+        activePageId: activePageId ?? this.activePageId,
+        oauthAccessToken: oauthAccessToken ?? this.oauthAccessToken,
+        oauthRefreshToken: oauthRefreshToken ?? this.oauthRefreshToken,
+      );
 }
 
 /// One selectable YouTube identity: a Google account's main channel
@@ -1104,6 +1133,17 @@ class InnerTubeMusicApi {
   }
 
   Future<void> loadPersistedConnection() async {
+    final oauthAccess = await _secure.readYtOAuthAccessToken() ?? '';
+    final oauthRefresh = await _secure.readYtOAuthRefreshToken() ?? '';
+    if (oauthAccess.isNotEmpty || oauthRefresh.isNotEmpty) {
+      _connection = YtConnection(
+        connected: true,
+        oauthAccessToken: oauthAccess,
+        oauthRefreshToken: oauthRefresh,
+        connectedAtMillis: DateTime.now().millisecondsSinceEpoch,
+      );
+      return;
+    }
     final stored = await _secure.readYtCookies() ?? '';
     if (stored.isEmpty) return;
     // Stored values predate normalization — re-normalize so old
@@ -1325,6 +1365,10 @@ class InnerTubeMusicApi {
   Future<void> verifyConnection({bool markStale = true}) async {
     if (!_connection.connected) {
       throw StateError('Not connected');
+    }
+    if (_connection.oauthAccessToken.isNotEmpty) {
+      if (markStale) _setAuthStale(false);
+      return;
     }
     final root = await _browseRoot(
       libraryPlaylistsBrowseId,
@@ -2022,6 +2066,27 @@ class InnerTubeMusicApi {
     return '';
   }
 
+  Future<void> connectWithOAuth({
+    required String accessToken,
+    required String refreshToken,
+    String name = '',
+    String email = '',
+    String picture = '',
+  }) async {
+    await _secure.writeYtOAuthAccessToken(accessToken);
+    await _secure.writeYtOAuthRefreshToken(refreshToken);
+    _connection = YtConnection(
+      connected: true,
+      oauthAccessToken: accessToken,
+      oauthRefreshToken: refreshToken,
+      accountName: name,
+      profileEmail: email,
+      photoUrl: picture,
+      connectedAtMillis: DateTime.now().millisecondsSinceEpoch,
+    );
+    notifyListeners();
+  }
+
   Future<void> signOut() async {
     _persistedCookies = '';
     try {
@@ -2030,6 +2095,8 @@ class InnerTubeMusicApi {
     await _secure.writeYtCookies(null);
     await _secure.writeYtProfiles(null);
     await _secure.writeYtActive(null);
+    await _secure.writeYtOAuthAccessToken(null);
+    await _secure.writeYtOAuthRefreshToken(null);
     _connection = const YtConnection();
     _clearAccountCache();
     _setAuthStale(false);
@@ -2254,6 +2321,9 @@ class InnerTubeMusicApi {
   }
 
   String? _authorizationHeaderValue([String? origin]) {
+    if (_connection.oauthAccessToken.isNotEmpty) {
+      return 'Bearer ${_connection.oauthAccessToken}';
+    }
     final sapisid = _sapisid();
     if (sapisid == null) return null;
     return LastFmSigner.sapisidHash(sapisid, origin ?? musicOrigin);
@@ -2266,7 +2336,7 @@ class InnerTubeMusicApi {
           // SAPISID identifies the login and never rotates, so cookie
           // rotations don't invalidate the per-account stream cache.
           utf8.encode(
-            '${_sapisid() ?? _connection.cookies}|${_connection.activePageId}',
+            '${_connection.oauthAccessToken.isNotEmpty ? _connection.oauthAccessToken : (_sapisid() ?? _connection.cookies)}|${_connection.activePageId}',
           ),
         )
         .bytes
