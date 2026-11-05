@@ -101,7 +101,7 @@ class _WaveTrackRowState extends ConsumerState<WaveTrackRow> {
         album: track.album ?? '',
         artworkUrl: track.artworkUrl ?? '',
         videoId: track.videoId ?? '',
-        duration: track.durationMs != null ? Duration(milliseconds: track.durationMs!) : null,
+        duration: track.duration > Duration.zero ? track.duration : null,
       );
       return;
     }

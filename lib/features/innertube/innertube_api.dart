@@ -1789,8 +1789,111 @@ class InnerTubeMusicApi {
   /// Like [fetchAccountPlaylists], but null on failure so the sync engine
   /// can tell "could not load" apart from "the account has none". Follows
   /// the library grid's continuation pages.
+  Future<List<YouTubePlaylistSummary>?> _fetchAccountPlaylistsOAuth() async {
+    try {
+      final res = await _post(
+        '$youtubeApi/browse?key=$_apiKey&prettyPrint=false',
+        body: {
+          'context': {
+            'client': {
+              'clientName': 'TVHTML5',
+              'clientVersion': '7.20250212.01.00',
+              'hl': 'en',
+              'gl': 'US',
+            }
+          },
+          'browseId': 'FEplaylist_aggregation',
+        },
+        clientName: 'TVHTML5',
+        clientVersion: '7.20250212.01.00',
+        userAgent: 'Mozilla/5.0 (ChromiumStylePlatform) Cobalt/Version',
+        authenticated: true,
+        origin: 'https://www.youtube.com/tv',
+        referer: 'https://www.youtube.com/tv/',
+      );
+
+      final contents = res['contents'] as Map<String, dynamic>?;
+      final tvBrowse = contents?['tvBrowseRenderer'] as Map<String, dynamic>?;
+      final tvSurface = tvBrowse?['content']?['tvSurfaceContentRenderer'] as Map<String, dynamic>?;
+      final grid = tvSurface?['content']?['gridRenderer'] as Map<String, dynamic>?;
+      final items = grid?['items'] as List<dynamic>? ?? const [];
+
+      final lists = <YouTubePlaylistSummary>[];
+      for (final it in items) {
+        if (it is! Map<String, dynamic>) continue;
+        final tile = it['tileRenderer'] as Map<String, dynamic>?;
+        if (tile == null) continue;
+        final header = tile['header']?['tileHeaderRenderer'] as Map<String, dynamic>?;
+        final meta = tile['metadata']?['tileMetadataRenderer'] as Map<String, dynamic>?;
+
+        final titleObj = meta?['title'] as Map<String, dynamic>?;
+        String title = '';
+        if (titleObj != null) {
+          if (titleObj['simpleText'] != null) {
+            title = titleObj['simpleText'].toString();
+          } else if (titleObj['runs'] is List && (titleObj['runs'] as List).isNotEmpty) {
+            title = (titleObj['runs'] as List)[0]['text']?.toString() ?? '';
+          }
+        }
+        if (title.isEmpty) continue;
+
+        final contentId = tile['contentId']?.toString() ?? '';
+        final cmdEndpoint = tile['onSelectCommand']?['browseEndpoint'] as Map<String, dynamic>?;
+        final browseId = cmdEndpoint?['browseId']?.toString() ?? '';
+        final String playlistId = contentId.isNotEmpty
+            ? contentId
+            : (browseId.startsWith('VL') ? browseId.substring(2) : browseId);
+
+        if (playlistId.startsWith('UC') || playlistId.startsWith('MPRE')) continue;
+
+        final thumbs = header?['thumbnail']?['thumbnails'] as List<dynamic>?;
+        String artworkUrl = '';
+        if (thumbs != null && thumbs.isNotEmpty) {
+          artworkUrl = thumbs.last['url']?.toString() ?? '';
+        }
+
+        String trackCount = '';
+        final overlays = header?['thumbnailOverlays'] as List<dynamic>?;
+        if (overlays != null) {
+          for (final ov in overlays) {
+            final statusText = ov['thumbnailOverlayTimeStatusRenderer']?['text'] as Map<String, dynamic>?;
+            if (statusText != null) {
+              if (statusText['runs'] is List) {
+                trackCount = (statusText['runs'] as List).map((r) => r['text']?.toString() ?? '').join().trim();
+              } else if (statusText['simpleText'] != null) {
+                trackCount = statusText['simpleText'].toString().trim();
+              }
+            }
+          }
+        }
+
+        lists.add(YouTubePlaylistSummary(
+          id: playlistId,
+          title: title,
+          author: '',
+          trackCountText: trackCount,
+          artworkUrl: artworkUrl,
+        ));
+      }
+
+      if (kDebugMode) {
+        debugPrint('YtFetch: OAuth TV playlists=${lists.length}');
+      }
+      return lists;
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('YtFetch: OAuth TV playlists FAILED $e');
+      }
+      return null;
+    }
+  }
+
   Future<List<YouTubePlaylistSummary>?> fetchAccountPlaylistsOrNull() async {
     if (!_connection.connected) return null;
+    if (_connection.oauthAccessToken.isNotEmpty) {
+      final oauthLists = await _fetchAccountPlaylistsOAuth();
+      if (oauthLists != null) return oauthLists;
+    }
     try {
       await _ensureConfig();
       final root = await _browseRoot(
