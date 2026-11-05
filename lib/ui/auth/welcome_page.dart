@@ -17,7 +17,7 @@ import '../theme/tokens.dart';
 import '../theme/wave_icons.dart';
 import 'lastfm_key_guide.dart';
 
-const _githubUrl = 'https://github.com/aniketdubey1204-code/LastWave-Desktop';
+const _githubUrl = 'https://github.com/aniketdubey1204-code/Aura-Desktop';
 
 enum _WelcomeBusyAction { none, ytWeb, ytCookie, spotify, guest, lastfm }
 

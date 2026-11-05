@@ -3084,7 +3084,7 @@ class _AboutState extends ConsumerState<_About> {
             children: [
               WaveButton(
                 onPressed: () =>
-                    _open('https://github.com/aniketdubey1204-code/LastWave-Desktop'),
+                    _open('https://github.com/aniketdubey1204-code/Aura-Desktop'),
                 child: const Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -3096,7 +3096,7 @@ class _AboutState extends ConsumerState<_About> {
               ),
               WaveButton(
                 onPressed: () => _open(
-                  'https://github.com/aniketdubey1204-code/LastWave-Desktop/issues',
+                  'https://github.com/aniketdubey1204-code/Aura-Desktop/issues',
                 ),
                 child: const Row(
                   mainAxisSize: MainAxisSize.min,
@@ -3109,7 +3109,7 @@ class _AboutState extends ConsumerState<_About> {
               ),
               WaveButton(
                 onPressed: () =>
-                    _open('https://github.com/aniketdubey1204-code/LastWave-Desktop'),
+                    _open('https://github.com/aniketdubey1204-code/Aura-Desktop'),
                 child: const Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [

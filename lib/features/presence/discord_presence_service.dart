@@ -45,7 +45,7 @@ class DiscordPresenceService {
   /// Swap this for the asset key `logo` if the portal assets are ever
   /// uploaded instead.
   static const discordLogoAsset =
-      'https://raw.githubusercontent.com/Clash-Projects/LastWave-Desktop/'
+      'https://raw.githubusercontent.com/aniketdubey1204-code/Aura-Desktop/'
       'main/lastwave-logo.png';
 
   static const _maxField = 120;
@@ -196,7 +196,7 @@ class DiscordPresenceService {
     // Discord buttons are plain URLs — they cannot detect the app. Listen
     // opens the track itself so the clicker can hear it right away; Get
     // always opens the repo.
-    const repoUrl = 'https://github.com/Clash-Projects/LastWave-Desktop';
+    const repoUrl = 'https://github.com/aniketdubey1204-code/Aura-Desktop';
     final vid = track.videoId.trim();
     return {
       'type': 2,
