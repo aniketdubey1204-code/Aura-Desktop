@@ -102,7 +102,8 @@ class GoogleDeviceAuth {
     Duration timeout = const Duration(minutes: 15),
   }) async {
     final startTime = DateTime.now();
-    final delay = Duration(seconds: interval < 3 ? 3 : interval);
+    final pollSeconds = interval < 5 ? 5 : interval;
+    final delay = Duration(seconds: pollSeconds);
 
     while (DateTime.now().difference(startTime) < timeout) {
       await Future<void>.delayed(delay);
@@ -113,7 +114,7 @@ class GoogleDeviceAuth {
             'client_id': _clientId,
             'client_secret': _clientSecret,
             'device_code': deviceCode,
-            'grant_type': 'http://oauth.net/grant_type/device/1.0',
+            'grant_type': 'urn:ietf:params:oauth:grant-type:device_code',
           },
           options: Options(
             contentType: Headers.formUrlEncodedContentType,
@@ -131,15 +132,18 @@ class GoogleDeviceAuth {
         final error = data['error'] as String?;
         if (error != null) {
           if (error == 'authorization_pending') {
-            // User hasn't finished typing the code yet; continue polling.
+            // User hasn't completed entry in the browser yet; continue polling.
             continue;
           } else if (error == 'slow_down') {
             await Future<void>.delayed(const Duration(seconds: 5));
             continue;
-          } else {
-            // access_denied, expired_token, etc.
-            if (kDebugMode) debugPrint('GoogleDeviceAuth poll error: $error');
+          } else if (error == 'access_denied' || error == 'expired_token') {
+            if (kDebugMode) debugPrint('GoogleDeviceAuth terminal error: $error');
             return null;
+          } else {
+            // Transient or unrecognized error; continue polling.
+            if (kDebugMode) debugPrint('GoogleDeviceAuth poll error: $error');
+            continue;
           }
         }
 
@@ -184,8 +188,8 @@ class GoogleDeviceAuth {
       );
 
       final data = response.data is Map<String, dynamic>
-          ? response.data as Map<String, dynamic>
-          : jsonDecode(response.data.toString()) as Map<String, dynamic>;
+        ? response.data as Map<String, dynamic>
+        : jsonDecode(response.data.toString()) as Map<String, dynamic>;
 
       final accessToken = data['access_token'] as String?;
       final expiresIn = (data['expires_in'] as num?)?.toInt() ?? 3600;
