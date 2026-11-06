@@ -3744,7 +3744,7 @@ class _SongTransitionsCardState extends ConsumerState<_SongTransitionsCard> {
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
                 color: (dark ? Colors.white : Colors.black).withOpacity(0.04),
-                borderRadius: WaveRadius.card,
+                borderRadius: WaveRadius.controlsRadius,
                 border: Border.all(
                   color: (dark ? Colors.white : Colors.black).withOpacity(0.06),
                 ),
@@ -3909,7 +3909,7 @@ class _TransitionModePill extends StatelessWidget {
             color: isSelected
                 ? accent.withOpacity(dark ? 0.22 : 0.15)
                 : (dark ? Colors.white : Colors.black).withOpacity(0.04),
-            borderRadius: WaveRadius.card,
+            borderRadius: WaveRadius.controlsRadius,
             border: Border.all(
               color: isSelected
                   ? accent.withOpacity(0.85)
