@@ -3238,24 +3238,13 @@ class _AboutState extends ConsumerState<_About> {
                 ),
               ),
               WaveButton(
-                onPressed: () => _open('https://t.me/clashprojects'),
+                onPressed: () => _open('https://t.me/duhitssaniket'),
                 child: const Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     TelegramIcon(size: 14),
                     SizedBox(width: 6),
-                    Text('Telegram community'),
-                  ],
-                ),
-              ),
-              WaveButton(
-                onPressed: () => _open('https://discord.com/invite/TMCEPSUNk2'),
-                child: const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    DiscordIcon(size: 14),
-                    SizedBox(width: 6),
-                    Text('Discord server'),
+                    Text('Telegram (@duhitssaniket)'),
                   ],
                 ),
               ),
