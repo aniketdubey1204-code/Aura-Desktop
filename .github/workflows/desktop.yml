@@ -52,6 +52,13 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Stamp Release Version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          sed -i "s/const String appVersion = .*/const String appVersion = '$VERSION';/" lib/core/app_info.dart
+          echo "Stamped lib/core/app_info.dart with $VERSION"
+
       # - name: Run analyzer & tests
       #   run: |
       #     flutter analyze --no-fatal-infos
@@ -370,6 +377,14 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Stamp Release Version
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          $ver = '${{ github.ref_name }}'.TrimStart('v')
+          (Get-Content lib\core\app_info.dart) -replace "const String appVersion = .*", "const String appVersion = '$ver';" | Set-Content lib\core\app_info.dart
+          Write-Host "Stamped lib\core\app_info.dart with $ver"
+
       - name: Build Windows app
         run: flutter build windows --release
 
@@ -516,6 +531,13 @@ jobs:
 
       - name: Install dependencies
         run: flutter pub get
+
+      - name: Stamp Release Version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          sed -i '' "s/const String appVersion = .*/const String appVersion = '$VERSION';/" lib/core/app_info.dart
+          echo "Stamped lib/core/app_info.dart with $VERSION"
 
       - name: Build macOS app
         run: flutter build macos --release
