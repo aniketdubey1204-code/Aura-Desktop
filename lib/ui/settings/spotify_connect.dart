@@ -1,7 +1,7 @@
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:url_launcher/url_launcher.dart';
 
+import '../../core/network/external_launcher.dart';
 import '../../features/spotify/spotify_api.dart';
 import '../../features/spotify/spotify_auth.dart';
 import '../../features/spotify/spotify_web_login.dart';
@@ -13,7 +13,7 @@ import '../theme/tokens.dart';
 /// [SpotifyAuth.connectWithSpDc], which exchanges the cookie for a real
 /// session token before anything says "connected".
 
-/// Route #1 — sign in inside the system WebView.
+/// Route #1 - sign in inside the system WebView.
 Future<bool> spotifyConnectWithWebView(
   BuildContext context,
   WidgetRef ref,
@@ -44,7 +44,7 @@ Future<bool> spotifyConnectWithWebView(
   return await _finish(context, ref, cookie);
 }
 
-/// Route #2 (recommended) — sign in with the user's normal browser, where
+/// Route #2 (recommended) - sign in with the user's normal browser, where
 /// Google / Facebook / Apple logins and Spotify's captcha work, then paste
 /// the `sp_dc` cookie. Embedded browsers are refused by Google and often
 /// fail Spotify's captcha, so this is the dependable path.
@@ -52,10 +52,7 @@ Future<bool> spotifyConnectViaBrowser(
   BuildContext context,
   WidgetRef ref,
 ) async {
-  await launchUrl(
-    Uri.parse('https://accounts.spotify.com/login'),
-    mode: LaunchMode.externalApplication,
-  );
+  await launchExternalBrowser('https://accounts.spotify.com/login');
   if (!context.mounted) return false;
   return await spotifyConnectWithCookie(context, ref);
 }
@@ -77,7 +74,7 @@ Future<bool> spotifyConnectWithCookie(
         children: [
           Text(
             '1. Sign in at open.spotify.com in your own browser.\n'
-            '2. Press F12 → Application (Firefox: Storage) → Cookies → '
+            '2. Press F12 -> Application (Firefox: Storage) -> Cookies -> '
             'https://open.spotify.com.\n'
             '3. Copy the Value of the "sp_dc" cookie and paste it below.',
             style: WaveType.meta.copyWith(

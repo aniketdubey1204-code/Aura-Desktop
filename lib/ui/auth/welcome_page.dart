@@ -90,14 +90,73 @@ class _WaveWelcomePageState extends ConsumerState<WaveWelcomePage> {
   }
 
   Future<void> _connectSpotify() async {
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => ContentDialog(
+        constraints: const BoxConstraints(maxWidth: 440),
+        title: const Row(
+          children: [
+            Icon(FluentIcons.music_note, size: 20),
+            SizedBox(width: 10),
+            Text('Connect Spotify'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Sign in to sync your Spotify playlists with Aura.',
+              style: WaveType.body.copyWith(
+                color: waveTextSecondary(dialogContext),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Signing in with your web browser is recommended if you use Google or Apple to log in to Spotify.',
+              style: WaveType.meta.copyWith(
+                color: waveTextSecondary(dialogContext),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          WaveFilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop('browser'),
+            child: const Text('Open in Browser (Recommended)'),
+          ),
+          WaveButton(
+            onPressed: () => Navigator.of(dialogContext).pop('webview'),
+            child: const Text('In-app Window'),
+          ),
+          WaveButton(
+            onPressed: () => Navigator.of(dialogContext).pop('cookie'),
+            child: const Text('Use sp_dc'),
+          ),
+          WaveButton(
+            onPressed: () => Navigator.of(dialogContext).pop(null),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+    if (choice == null || !mounted) return;
+
     setState(() {
       _busy = true;
       _busyAction = _WelcomeBusyAction.spotify;
       _error = null;
     });
     try {
-      final ok = await spotifyConnectWithWebView(context, ref);
-      if (ok) {
+      bool ok = false;
+      if (choice == 'browser') {
+        ok = await spotifyConnectViaBrowser(context, ref);
+      } else if (choice == 'cookie') {
+        ok = await spotifyConnectWithCookie(context, ref);
+      } else if (choice == 'webview') {
+        ok = await spotifyConnectWithWebView(context, ref);
+      }
+      if (ok && mounted) {
         await ref.read(authRepositoryProvider.notifier).enterGuestMode();
         ref.invalidate(feedProvider);
       }
