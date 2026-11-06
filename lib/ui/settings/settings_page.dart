@@ -3358,116 +3358,31 @@ class _General extends ConsumerWidget {
   }
 }
 
-class _Playback extends ConsumerStatefulWidget {
+class _Playback extends ConsumerWidget {
   final Future<void> Function(Future<void> Function(Prefs)) onUpdate;
   const _Playback({required this.onUpdate});
 
   @override
-  ConsumerState<_Playback> createState() => _PlaybackState();
-}
-
-class _PlaybackState extends ConsumerState<_Playback> {
-  double? _dragSeconds;
-
-  @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final prefs = ref.watch(prefsProvider);
-    final currentSeconds = _dragSeconds ?? prefs.crossfadeSeconds.toDouble();
 
-    return _Group(
-      id: 'playback.main',
-      title: 'Playback',
-      subtitle: 'Gapless, crossfade and output behaviour',
-      child: Column(
-        children: [
-          _SwitchRow(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _Group(
+          id: 'playback.main',
+          title: 'Autoplay',
+          subtitle: 'Continuous playback after your queue ends',
+          child: _SwitchRow(
             value: prefs.autoplaySimilar,
-            onChanged: (v) => widget.onUpdate((p) => p.setAutoplaySimilar(v)),
+            onChanged: (v) => onUpdate((p) => p.setAutoplaySimilar(v)),
             title: 'Autoplay similar',
             subtitle: 'Keep playing related tracks after a queue ends',
           ),
-          const SizedBox(height: 8),
-          _SwitchRow(
-            value: prefs.crossfadeEnabled,
-            onChanged: (v) async {
-              await widget.onUpdate((p) => p.setCrossfade(v));
-              await ref
-                  .read(playbackServiceProvider.notifier)
-                  .applyAudioPrefs();
-              ref.read(audioOutputProvider.notifier).refreshPath();
-            },
-            title: 'Crossfade',
-            subtitle: prefs.autoMixEnabled
-                ? 'Off while timed AutoMix is on'
-                : prefs.crossfadeEnabled
-                    ? '${prefs.crossfadeSeconds}s crossfade duration'
-                    : 'Gapless direct transition (crossfade disabled)',
-          ),
-          if (prefs.crossfadeEnabled) ...[
-            const SizedBox(height: 6),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      const Text(
-                        'Crossfade duration',
-                        style: WaveType.trackTitle,
-                      ),
-                      const Spacer(),
-                      Text(
-                        '${currentSeconds.round()}s',
-                        style: WaveType.meta.copyWith(
-                          color: waveAccent(context),
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  Slider(
-                    value: currentSeconds.clamp(3.0, 12.0),
-                    min: 3.0,
-                    max: 12.0,
-                    divisions: 9,
-                    onChanged: (v) => setState(() => _dragSeconds = v),
-                    onChangeEnd: (v) async {
-                      setState(() => _dragSeconds = null);
-                      final secs = v.round().clamp(3, 12);
-                      await widget.onUpdate((p) => p.setCrossfadeSeconds(secs));
-                    },
-                  ),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        '3s (Short)',
-                        style: WaveType.meta.copyWith(
-                          color: waveTextSecondary(context),
-                        ),
-                      ),
-                      Text(
-                        '7s (Standard)',
-                        style: WaveType.meta.copyWith(
-                          color: waveTextSecondary(context),
-                        ),
-                      ),
-                      Text(
-                        '12s (Long)',
-                        style: WaveType.meta.copyWith(
-                          color: waveTextSecondary(context),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ],
-      ),
+        ),
+        const SizedBox(height: 12),
+        _SongTransitionsCard(onUpdate: onUpdate),
+      ],
     );
   }
 }
@@ -3746,51 +3661,128 @@ class _Experimental extends ConsumerWidget {
   }
 }
 
-class _TimedMixSettings extends ConsumerStatefulWidget {
+class _TimedMixSettings extends StatelessWidget {
   final Future<void> Function(Future<void> Function(Prefs)) onUpdate;
   const _TimedMixSettings({required this.onUpdate});
 
   @override
-  ConsumerState<_TimedMixSettings> createState() => _TimedMixSettingsState();
+  Widget build(BuildContext context) {
+    return _SongTransitionsCard(onUpdate: onUpdate);
+  }
 }
 
-class _TimedMixSettingsState extends ConsumerState<_TimedMixSettings> {
-  double? _dragSeconds;
+class _SongTransitionsCard extends ConsumerStatefulWidget {
+  final Future<void> Function(Future<void> Function(Prefs)) onUpdate;
+  const _SongTransitionsCard({required this.onUpdate});
+
+  @override
+  ConsumerState<_SongTransitionsCard> createState() => _SongTransitionsCardState();
+}
+
+class _SongTransitionsCardState extends ConsumerState<_SongTransitionsCard> {
+  double? _dragAutoMixSeconds;
+  double? _dragCrossfadeSeconds;
 
   @override
   Widget build(BuildContext context) {
     final prefs = ref.watch(prefsProvider);
-    final seconds = _dragSeconds ?? prefs.autoMixSeconds.toDouble();
+    final mode = prefs.songTransitionMode;
+    final autoSecs = _dragAutoMixSeconds ?? prefs.autoMixSeconds.toDouble();
+    final crossSecs = _dragCrossfadeSeconds ?? prefs.crossfadeSeconds.toDouble();
+    final dark = waveIsDark(context);
+
     return _Group(
-      id: 'audio.automix',
-      title: 'AutoMix',
-      subtitle: prefs.autoMixEnabled
-          ? 'Timed dual-deck overlap, not beat-matched. Turns crossfade off.'
-          : 'Off. A timed mix between tracks, not a beat or key match.',
+      id: 'playback.transitions',
+      title: 'Song Transitions',
+      subtitle: mode == SongTransitionMode.autoMix
+          ? 'Intelligent DJ-style mix matching tempo, downbeats, and swapping bass'
+          : mode == SongTransitionMode.crossfade
+              ? 'Smooth equal-power volume blend between songs'
+              : 'Direct gapless playback between songs',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _SwitchRow(
-            value: prefs.autoMixEnabled,
-            onChanged: (v) async {
-              await widget.onUpdate((p) => p.setAutoMixEnabled(v));
-              await ref
-                  .read(playbackServiceProvider.notifier)
-                  .applyAudioPrefs();
-            },
-            title: 'Timed mix',
-            subtitle: prefs.autoMixEnabled
-                ? 'Up to ${prefs.autoMixSeconds}s, beat-matched on the downbeat when tempos are close. Skips silent intros and outros; album tracks stay gapless.'
-                : 'Gapless until you turn this on',
+          Row(
+            children: [
+              _TransitionModePill(
+                title: 'AutoMix',
+                subtitle: 'Smart DJ',
+                icon: FluentIcons.flow,
+                isSelected: mode == SongTransitionMode.autoMix,
+                onTap: () async {
+                  await widget.onUpdate((p) => p.setSongTransitionMode(SongTransitionMode.autoMix));
+                  await ref.read(playbackServiceProvider.notifier).applyAudioPrefs();
+                },
+              ),
+              const SizedBox(width: 8),
+              _TransitionModePill(
+                title: 'Crossfade',
+                subtitle: 'Blend',
+                icon: FluentIcons.switch_widget,
+                isSelected: mode == SongTransitionMode.crossfade,
+                onTap: () async {
+                  await widget.onUpdate((p) => p.setSongTransitionMode(SongTransitionMode.crossfade));
+                  await ref.read(playbackServiceProvider.notifier).applyAudioPrefs();
+                },
+              ),
+              const SizedBox(width: 8),
+              _TransitionModePill(
+                title: 'Off',
+                subtitle: 'Gapless',
+                icon: FluentIcons.stop,
+                isSelected: mode == SongTransitionMode.off,
+                onTap: () async {
+                  await widget.onUpdate((p) => p.setSongTransitionMode(SongTransitionMode.off));
+                  await ref.read(playbackServiceProvider.notifier).applyAudioPrefs();
+                },
+              ),
+            ],
           ),
-          if (prefs.autoMixEnabled) ...[
-            const SizedBox(height: 6),
+          const SizedBox(height: 14),
+          if (mode == SongTransitionMode.autoMix) ...[
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: (dark ? Colors.white : Colors.black).withOpacity(0.04),
+                borderRadius: WaveRadius.card,
+                border: Border.all(
+                  color: (dark ? Colors.white : Colors.black).withOpacity(0.06),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(FluentIcons.flow, size: 14, color: waveAccent(context)),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Apple Music Style AutoMix',
+                        style: WaveType.trackTitle.copyWith(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Transitions dynamically match tempos, lock to bar downbeats, and swap low-frequency basslines so kick drums never clash. Sequential album tracks stay gapless.',
+                    style: WaveType.meta.copyWith(
+                      color: waveTextSecondary(context),
+                      height: 1.35,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
             Row(
               children: [
-                const Text('Transition length', style: WaveType.trackTitle),
+                const Text('Maximum mix window', style: WaveType.trackTitle),
                 const Spacer(),
                 Text(
-                  '${seconds.round()}s',
+                  '${autoSecs.round()}s',
                   style: WaveType.meta.copyWith(
                     color: waveAccent(context),
                     fontWeight: FontWeight.w600,
@@ -3798,14 +3790,15 @@ class _TimedMixSettingsState extends ConsumerState<_TimedMixSettings> {
                 ),
               ],
             ),
+            const SizedBox(height: 6),
             Slider(
-              value: seconds.clamp(12.0, 18.0),
-              min: 12,
-              max: 18,
+              value: autoSecs.clamp(12.0, 18.0),
+              min: 12.0,
+              max: 18.0,
               divisions: 6,
-              onChanged: (v) => setState(() => _dragSeconds = v),
+              onChanged: (v) => setState(() => _dragAutoMixSeconds = v),
               onChangeEnd: (v) async {
-                setState(() => _dragSeconds = null);
+                setState(() => _dragAutoMixSeconds = null);
                 await widget.onUpdate(
                     (p) => p.setAutoMixSeconds(v.round().clamp(12, 18)));
               },
@@ -3813,29 +3806,147 @@ class _TimedMixSettingsState extends ConsumerState<_TimedMixSettings> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text('12s',
-                    style: WaveType.meta
-                        .copyWith(color: waveTextSecondary(context))),
-                Text('18s',
-                    style: WaveType.meta
-                        .copyWith(color: waveTextSecondary(context))),
+                Text('12s (Brisk)',
+                    style: WaveType.meta.copyWith(color: waveTextSecondary(context))),
+                Text('15s (Standard)',
+                    style: WaveType.meta.copyWith(color: waveTextSecondary(context))),
+                Text('18s (Extended)',
+                    style: WaveType.meta.copyWith(color: waveTextSecondary(context))),
               ],
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 10),
             _SwitchRow(
               value: prefs.autoMixSpectral,
               onChanged: (v) async {
                 await widget.onUpdate((p) => p.setAutoMixSpectral(v));
-                await ref
-                    .read(playbackServiceProvider.notifier)
-                    .applyAudioPrefs();
+                await ref.read(playbackServiceProvider.notifier).applyAudioPrefs();
               },
-              title: 'Filter sweep',
+              title: 'Dynamic Bass Swap',
               subtitle:
-                  'Low-pass on the way out and high-pass on the way in. Turns itself off (volume blend only) if the audio engine lacks the filters.',
+                  'Filters sub-bass on incoming tracks (< 280 Hz) and swaps basslines cleanly on the downbeat, eliminating low-end distortion.',
+            ),
+          ] else if (mode == SongTransitionMode.crossfade) ...[
+            Row(
+              children: [
+                const Text('Crossfade duration', style: WaveType.trackTitle),
+                const Spacer(),
+                Text(
+                  '${crossSecs.round()}s',
+                  style: WaveType.meta.copyWith(
+                    color: waveAccent(context),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Slider(
+              value: crossSecs.clamp(3.0, 12.0),
+              min: 3.0,
+              max: 12.0,
+              divisions: 9,
+              onChanged: (v) => setState(() => _dragCrossfadeSeconds = v),
+              onChangeEnd: (v) async {
+                setState(() => _dragCrossfadeSeconds = null);
+                final secs = v.round().clamp(3, 12);
+                await widget.onUpdate((p) => p.setCrossfadeSeconds(secs));
+              },
+            ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('3s (Short)',
+                    style: WaveType.meta.copyWith(color: waveTextSecondary(context))),
+                Text('7s (Standard)',
+                    style: WaveType.meta.copyWith(color: waveTextSecondary(context))),
+                Text('12s (Long)',
+                    style: WaveType.meta.copyWith(color: waveTextSecondary(context))),
+              ],
+            ),
+          ] else ...[
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Text(
+                'Tracks play from start to finish without fading. Continuous album segues play seamlessly.',
+                style: WaveType.meta.copyWith(color: waveTextSecondary(context)),
+              ),
             ),
           ],
         ],
+      ),
+    );
+  }
+}
+
+class _TransitionModePill extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  const _TransitionModePill({
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final dark = waveIsDark(context);
+    final accent = waveAccent(context);
+
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          curve: Curves.easeOut,
+          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+          decoration: BoxDecoration(
+            color: isSelected
+                ? accent.withOpacity(dark ? 0.22 : 0.15)
+                : (dark ? Colors.white : Colors.black).withOpacity(0.04),
+            borderRadius: WaveRadius.card,
+            border: Border.all(
+              color: isSelected
+                  ? accent.withOpacity(0.85)
+                  : (dark ? Colors.white : Colors.black).withOpacity(0.08),
+              width: isSelected ? 1.5 : 1.0,
+            ),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                icon,
+                size: 16,
+                color: isSelected ? accent : waveTextSecondary(context),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                title,
+                style: WaveType.trackTitle.copyWith(
+                  fontSize: 12,
+                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                  color: isSelected ? accent : null,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                subtitle,
+                style: WaveType.meta.copyWith(
+                  fontSize: 10,
+                  color: isSelected
+                      ? accent.withOpacity(0.85)
+                      : waveTextSecondary(context),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

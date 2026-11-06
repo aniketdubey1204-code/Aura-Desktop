@@ -81,8 +81,9 @@ class MixPlanner {
     required Duration requested,
     required bool sweepAvailable,
     bool sweepWanted = true,
+    bool isShuffle = false,
   }) {
-    if (_sameAlbum(outgoing, incoming)) {
+    if (!isShuffle && _sameAlbum(outgoing, incoming)) {
       return const MixPlan(
           style: MixStyle.gapless, overlap: Duration.zero, reason: 'album');
     }

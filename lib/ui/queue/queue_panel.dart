@@ -7,6 +7,7 @@ import '../../app/track_actions.dart';
 import '../../core/audio/stream_models.dart';
 import '../../features/downloads/download_manager.dart';
 import '../../features/player/playback_service.dart';
+import '../../core/storage/prefs.dart';
 import '../components/artwork.dart';
 import '../components/buttons.dart' show LWTooltip, WaveButton, WaveFilledButton, WaveLink;
 import '../components/menus.dart';
@@ -38,6 +39,7 @@ class WaveQueuePanel extends ConsumerWidget {
     );
     final notifier = ref.read(playbackServiceProvider.notifier);
     final locked = ref.watch(queueLockedProvider);
+    final autoMixOn = ref.watch(prefsProvider.select((p) => p.autoMixEnabled));
     if (queue.isEmpty) {
       return _Shell(
         onClose: onClose,
@@ -98,6 +100,34 @@ class WaveQueuePanel extends ConsumerWidget {
                   ),
                 ),
                 const Spacer(),
+                LWTooltip(
+                  message: autoMixOn
+                      ? 'AutoMix: Intelligent DJ transitions (Active)'
+                      : 'AutoMix: Intelligent DJ transitions (Off)',
+                  child: WaveLink(
+                    onPressed: () => notifier.toggleAutoMix(),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          FluentIcons.flow,
+                          size: 13,
+                          color: autoMixOn ? waveAccent(context) : null,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          'AutoMix',
+                          style: WaveType.label.copyWith(
+                            fontSize: 11,
+                            color: autoMixOn ? waveAccent(context) : null,
+                            fontWeight: autoMixOn ? FontWeight.w600 : null,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
                 LWTooltip(
                   message: locked
                       ? 'Unlock reorder and remove'

@@ -238,7 +238,7 @@ class PlaybackService extends StateNotifier<PlayerSnapshot> {
     final inDur = incomingDur > Duration.zero ? incomingDur : next.duration;
     final key = '${cur?.queueKey}>${next.queueKey}|${state.duration.inSeconds}'
         '|${inDur.inSeconds}|${requested.inSeconds}|$_sweepSupported'
-        '|${_prefs.autoMixSpectral}';
+        '|${_prefs.autoMixSpectral}|${state.shuffle}';
     final cached = _mixPlan;
     if (cached != null && key == _mixPlanKey) return cached;
     final plan = MixPlanner.plan(
@@ -259,6 +259,7 @@ class PlaybackService extends StateNotifier<PlayerSnapshot> {
       // the error guard during the mix) settle it before it can hurt.
       sweepAvailable: _sweepSupported != false,
       sweepWanted: _prefs.autoMixSpectral,
+      isShuffle: state.shuffle,
     );
     if (_mixPlanKey.split('|').first != key.split('|').first) {
       _crumb('automix plan ${cur?.queueKey} -> ${next.queueKey} '
@@ -777,6 +778,26 @@ class PlaybackService extends StateNotifier<PlayerSnapshot> {
     }
     refreshOverlapPrefs();
     _notifyProcessing();
+  }
+
+  SongTransitionMode get songTransitionMode => _prefs.songTransitionMode;
+
+  Future<void> setSongTransitionMode(SongTransitionMode mode) async {
+    await _prefs.setSongTransitionMode(mode);
+    _mixPlan = null;
+    _mixPlanKey = '';
+    _beatPlan = null;
+    _beatPlanKey = '';
+    await applyAudioPrefs();
+  }
+
+  Future<void> toggleAutoMix() async {
+    await _prefs.toggleAutoMix();
+    _mixPlan = null;
+    _mixPlanKey = '';
+    _beatPlan = null;
+    _beatPlanKey = '';
+    await applyAudioPrefs();
   }
 
   void refreshOverlapPrefs() {
@@ -3924,6 +3945,7 @@ class PrefsHandle {
   bool get autoMixEnabled => _prefs.autoMixEnabled;
   int get autoMixSeconds => _prefs.autoMixSeconds;
   bool get autoMixSpectral => _prefs.autoMixSpectral;
+  SongTransitionMode get songTransitionMode => _prefs.songTransitionMode;
   bool get equalizerEnabled => _prefs.equalizerEnabled;
   bool get studioClarityEnabled => _prefs.studioClarityEnabled;
   Prefs get rawPrefs => _prefs;

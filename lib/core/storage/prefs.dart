@@ -5,6 +5,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../network/lastfm_crypto.dart';
 
+enum SongTransitionMode {
+  off,
+  crossfade,
+  autoMix,
+}
+
 /// Settings + session persistence.
 ///
 /// Key names mirror LastWave-native `SettingsPreferences` /
@@ -113,6 +119,38 @@ class Prefs {
       _sp.getBool('lw_autoplay_similar') ?? true;
   Future<void> setAutoplaySimilar(bool v) =>
       _sp.setBool('lw_autoplay_similar', v);
+
+  // -- Song Transitions (Apple Music model: AutoMix, Crossfade, Off) ------
+  SongTransitionMode get songTransitionMode {
+    if (autoMixEnabled) return SongTransitionMode.autoMix;
+    if (crossfadeEnabled) return SongTransitionMode.crossfade;
+    return SongTransitionMode.off;
+  }
+
+  Future<void> setSongTransitionMode(SongTransitionMode mode) async {
+    switch (mode) {
+      case SongTransitionMode.autoMix:
+        await _sp.setBool('lw_automix_enabled', true);
+        await _sp.setBool('lw_crossfade_enabled', false);
+        break;
+      case SongTransitionMode.crossfade:
+        await _sp.setBool('lw_automix_enabled', false);
+        await _sp.setBool('lw_crossfade_enabled', true);
+        break;
+      case SongTransitionMode.off:
+        await _sp.setBool('lw_automix_enabled', false);
+        await _sp.setBool('lw_crossfade_enabled', false);
+        break;
+    }
+  }
+
+  Future<void> toggleAutoMix() async {
+    if (autoMixEnabled) {
+      await setSongTransitionMode(SongTransitionMode.off);
+    } else {
+      await setSongTransitionMode(SongTransitionMode.autoMix);
+    }
+  }
 
   bool get crossfadeEnabled => _sp.getBool('lw_crossfade_enabled') ?? false;
   int get crossfadeSeconds {
