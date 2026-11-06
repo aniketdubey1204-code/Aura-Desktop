@@ -219,7 +219,7 @@ class PlaybackService extends StateNotifier<PlayerSnapshot> {
     if (_timedMixEnabled) {
       return Duration(seconds: _prefs.autoMixSeconds.clamp(12, 18));
     }
-    return Duration(seconds: _prefs.crossfadeSeconds.clamp(3, 12));
+    return Duration(seconds: _prefs.crossfadeSeconds.clamp(1, 12));
   }
 
   /// AutoMix plan for the current track into [next]. Crossfade mode keeps

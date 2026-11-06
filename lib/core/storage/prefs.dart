@@ -155,7 +155,7 @@ class Prefs {
   bool get crossfadeEnabled => _sp.getBool('lw_crossfade_enabled') ?? false;
   int get crossfadeSeconds {
     final v = _sp.getInt('lw_crossfade_seconds') ?? 5;
-    return v.clamp(3, 12);
+    return v.clamp(1, 12);
   }
 
   Future<void> setCrossfade(bool enabled, [int? seconds]) async {
@@ -164,12 +164,12 @@ class Prefs {
       await _sp.setBool('lw_automix_enabled', false);
     }
     if (seconds != null) {
-      await _sp.setInt('lw_crossfade_seconds', seconds.clamp(3, 12));
+      await _sp.setInt('lw_crossfade_seconds', seconds.clamp(1, 12));
     }
   }
 
   Future<void> setCrossfadeSeconds(int seconds) async {
-    await _sp.setInt('lw_crossfade_seconds', seconds.clamp(3, 12));
+    await _sp.setInt('lw_crossfade_seconds', seconds.clamp(1, 12));
   }
 
   bool get bitPerfect => _sp.getBool('lw_bit_perfect') ?? false;

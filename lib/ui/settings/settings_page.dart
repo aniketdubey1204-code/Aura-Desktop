@@ -3841,23 +3841,23 @@ class _SongTransitionsCardState extends ConsumerState<_SongTransitionsCard> {
             ),
             const SizedBox(height: 6),
             Slider(
-              value: crossSecs.clamp(3.0, 12.0),
-              min: 3.0,
+              value: crossSecs.clamp(1.0, 12.0),
+              min: 1.0,
               max: 12.0,
-              divisions: 9,
+              divisions: 11,
               onChanged: (v) => setState(() => _dragCrossfadeSeconds = v),
               onChangeEnd: (v) async {
                 setState(() => _dragCrossfadeSeconds = null);
-                final secs = v.round().clamp(3, 12);
+                final secs = v.round().clamp(1, 12);
                 await widget.onUpdate((p) => p.setCrossfadeSeconds(secs));
               },
             ),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text('3s (Short)',
+                Text('1s (Quick)',
                     style: WaveType.meta.copyWith(color: waveTextSecondary(context))),
-                Text('7s (Standard)',
+                Text('6s (Standard)',
                     style: WaveType.meta.copyWith(color: waveTextSecondary(context))),
                 Text('12s (Long)',
                     style: WaveType.meta.copyWith(color: waveTextSecondary(context))),
