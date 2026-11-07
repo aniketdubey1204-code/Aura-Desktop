@@ -896,10 +896,7 @@ class _WaveShellState extends ConsumerState<WaveShell> {
             // Now constraints stay constant during the animation and
             // only the tiny rail subtree lays out per tick.
             Expanded(
-              child: Column(
-                children: [
-                  Expanded(
-                    child: DropTarget(
+              child: DropTarget(
                       onDragEntered: (_) =>
                           setState(() => _draggingFiles = true),
                       onDragExited: (_) =>
@@ -1078,41 +1075,40 @@ class _WaveShellState extends ConsumerState<WaveShell> {
                               // (it is not in the Column below then).
                               // Painted last so the queue / equalizer
                               // panels never cover its toggles.
-                              if (immersive)
-                                AnimatedPositioned(
-                                  duration: waveMotion(
-                                    context,
-                                    WaveMotion.normal,
-                                  ),
-                                  curve: Curves.easeOutCubic,
-                                  left: 0,
-                                  right: _canvasOpen ? cw : 0,
-                                  bottom: 0,
-                                  child: WaveImmersiveDockOverlay(
-                                    child: _dockFor(
-                                      lyricsActive: isNowPlaying,
-                                      queueActive: _queueOpen,
-                                      equalizerActive: _equalizerOpen,
-                                      canvasActive: _canvasOpen,
-                                      compact: true,
-                                    ),
-                                  ),
+                              // Floating Player Dock:
+                              // Sits above scrolling content at the bottom of the window,
+                              // letting background content glide underneath its acrylic blur.
+                              AnimatedPositioned(
+                                duration: waveMotion(
+                                  context,
+                                  WaveMotion.normal,
                                 ),
+                                curve: Curves.easeOutCubic,
+                                left: immersive ? 0 : railW,
+                                right: _canvasOpen ? cw : 0,
+                                bottom: 0,
+                                child: immersive
+                                    ? WaveImmersiveDockOverlay(
+                                        child: _dockFor(
+                                          lyricsActive: isNowPlaying,
+                                          queueActive: _queueOpen,
+                                          equalizerActive: _equalizerOpen,
+                                          canvasActive: _canvasOpen,
+                                          compact: true,
+                                        ),
+                                      )
+                                    : _dockFor(
+                                        lyricsActive: isNowPlaying,
+                                        queueActive: _queueOpen,
+                                        equalizerActive: _equalizerOpen,
+                                        canvasActive: _canvasOpen,
+                                      ),
+                              ),
                             ],
                           );
                         },
                       ),
                     ),
-                  ),
-                  if (!immersive)
-                    _dockFor(
-                      lyricsActive: isNowPlaying,
-                      queueActive: _queueOpen,
-                      equalizerActive: _equalizerOpen,
-                      canvasActive: _canvasOpen,
-                    ),
-                ],
-              ),
             ),
           ],
         ),

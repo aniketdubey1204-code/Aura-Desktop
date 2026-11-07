@@ -187,6 +187,7 @@ class WaveQueuePanel extends ConsumerWidget {
                   )
                 : locked
                     ? ListView.builder(
+                        padding: const EdgeInsets.only(bottom: 96),
                         itemCount: upcoming.length,
                         itemBuilder: (context, i) {
                           final queueIndex = index + 1 + i;
@@ -201,6 +202,7 @@ class WaveQueuePanel extends ConsumerWidget {
                         },
                       )
                     : ReorderableListView.builder(
+                    padding: const EdgeInsets.only(bottom: 96),
                     buildDefaultDragHandles: false,
                     itemCount: upcoming.length,
                     // onReorderItem hands over post-removal coordinates;

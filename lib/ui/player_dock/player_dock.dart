@@ -1,6 +1,7 @@
 import '../../features/connect/aura_connect_service.dart';
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:ui';
 
 import 'package:audio_video_progress_bar/audio_video_progress_bar.dart' as avp;
 import 'package:fluent_ui/fluent_ui.dart' hide RepeatMode;
@@ -104,10 +105,10 @@ class WavePlayerDock extends ConsumerWidget {
 
     final targetBase = () {
       final baseColor = dark
-          ? waveDockTranslucent(context)
-          : waveSurface(context).withValues(alpha: 0.97);
+          ? waveDockTranslucent(context).withValues(alpha: 0.70)
+          : waveSurface(context).withValues(alpha: 0.82);
       if (dockTint != null && dark) {
-        return Color.lerp(baseColor, dockTint, 0.05) ?? baseColor;
+        return Color.lerp(baseColor, dockTint.withValues(alpha: 0.70), 0.08) ?? baseColor;
       }
       return baseColor;
     }();
@@ -118,38 +119,58 @@ class WavePlayerDock extends ConsumerWidget {
       curve: Curves.easeOutCubic,
       builder: (context, animatedBase, child) {
         if (compact) {
-          return WaveHaze(
-            level: LwHazeLevel.l1,
-            enableBlur: false,
-            base: animatedBase ?? targetBase,
-            border: Border(
-              top: BorderSide(color: waveDivider(context)),
+          return ClipRect(
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: animatedBase ?? targetBase,
+                  border: Border(
+                    top: BorderSide(
+                      color: dark
+                          ? Colors.white.withValues(alpha: 0.10)
+                          : Colors.black.withValues(alpha: 0.08),
+                    ),
+                  ),
+                ),
+                child: child!,
+              ),
             ),
-            child: child!,
           );
         }
+        final dockBorderRadius = BorderRadius.circular(18);
         return Padding(
           padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
-          child: Container(
+          child: DecoratedBox(
             decoration: BoxDecoration(
-              color: animatedBase ?? targetBase,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: dark
-                    ? const Color(0xFF262C3D)
-                    : Colors.black.withValues(alpha: 0.08),
-                width: 1.0,
-              ),
+              borderRadius: dockBorderRadius,
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: dark ? 0.35 : 0.08),
-                  blurRadius: 16,
-                  offset: const Offset(0, 4),
+                  color: Colors.black.withValues(alpha: dark ? 0.38 : 0.10),
+                  blurRadius: 20,
+                  offset: const Offset(0, 6),
                 ),
               ],
             ),
-            clipBehavior: Clip.antiAlias,
-            child: child!,
+            child: ClipRRect(
+              borderRadius: dockBorderRadius,
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 26, sigmaY: 26),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: animatedBase ?? targetBase,
+                    borderRadius: dockBorderRadius,
+                    border: Border.all(
+                      color: dark
+                          ? const Color(0xFF2E3547).withValues(alpha: 0.80)
+                          : Colors.black.withValues(alpha: 0.08),
+                      width: 1.0,
+                    ),
+                  ),
+                  child: child!,
+                ),
+              ),
+            ),
           ),
         );
       },

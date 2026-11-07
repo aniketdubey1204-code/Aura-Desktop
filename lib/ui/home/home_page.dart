@@ -436,7 +436,7 @@ class WaveHomePage extends ConsumerWidget {
     return SliverMainAxisGroup(slivers: [
       for (final id in order)
         if (!layout.hidden.contains(id)) ...?sections[id],
-      const SliverToBoxAdapter(child: SizedBox(height: 28)),
+      const SliverToBoxAdapter(child: SizedBox(height: 100)),
     ]);
   }
 
@@ -848,7 +848,7 @@ class WaveHomePage extends ConsumerWidget {
     final slivers = <Widget>[
       for (final id in layout.order)
         if (!layout.hidden.contains(id)) ...?sections[id],
-      const SliverToBoxAdapter(child: SizedBox(height: 6)),
+      const SliverToBoxAdapter(child: SizedBox(height: 100)),
     ];
     return SliverMainAxisGroup(slivers: slivers);
   }

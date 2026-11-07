@@ -356,6 +356,7 @@ class _WaveSearchPageState extends ConsumerState<WaveSearchPage> {
             const SizedBox(height: 16),
             _CombinedResults(query: _submitted, filter: _filter),
           ],
+          const SizedBox(height: 100),
         ],
       ),
     );

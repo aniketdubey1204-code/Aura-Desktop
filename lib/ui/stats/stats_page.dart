@@ -102,7 +102,7 @@ class WaveStatsPage extends ConsumerWidget {
             ),
             data: (stats) {
               return SliverPadding(
-                padding: EdgeInsets.fromLTRB(side, 18, side, 44),
+                padding: EdgeInsets.fromLTRB(side, 18, side, 100),
                 sliver: SliverToBoxAdapter(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
