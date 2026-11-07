@@ -949,7 +949,7 @@ class _WaveShellState extends ConsumerState<WaveShell> {
                                 // Queue / equalizer overlay the page (they
                                 // do not push it); only Canvas docks.
                                 right: _canvasOpen ? cw : 0,
-                                child: widget.child,
+                                child: RepaintBoundary(child: widget.child),
                               ),
                               // Canvas — docks on the right edge and pushes
                               // the page. Queue / equalizer are painted
@@ -985,10 +985,12 @@ class _WaveShellState extends ConsumerState<WaveShell> {
                                   left: 0,
                                   top: 0,
                                   bottom: 0,
-                                  child: WaveSideRail(
-                                    expanded: !collapsed,
-                                    active: active,
-                                    onGo: _go,
+                                  child: RepaintBoundary(
+                                    child: WaveSideRail(
+                                      expanded: !collapsed,
+                                      active: active,
+                                      onGo: _go,
+                                    ),
                                   ),
                                 ),
                               if (_draggingFiles)
@@ -1087,22 +1089,24 @@ class _WaveShellState extends ConsumerState<WaveShell> {
                                 left: immersive ? 0 : railW,
                                 right: _canvasOpen ? cw : 0,
                                 bottom: 0,
-                                child: immersive
-                                    ? WaveImmersiveDockOverlay(
-                                        child: _dockFor(
+                                child: RepaintBoundary(
+                                  child: immersive
+                                      ? WaveImmersiveDockOverlay(
+                                          child: _dockFor(
+                                            lyricsActive: isNowPlaying,
+                                            queueActive: _queueOpen,
+                                            equalizerActive: _equalizerOpen,
+                                            canvasActive: _canvasOpen,
+                                            compact: true,
+                                          ),
+                                        )
+                                      : _dockFor(
                                           lyricsActive: isNowPlaying,
                                           queueActive: _queueOpen,
                                           equalizerActive: _equalizerOpen,
                                           canvasActive: _canvasOpen,
-                                          compact: true,
                                         ),
-                                      )
-                                    : _dockFor(
-                                        lyricsActive: isNowPlaying,
-                                        queueActive: _queueOpen,
-                                        equalizerActive: _equalizerOpen,
-                                        canvasActive: _canvasOpen,
-                                      ),
+                                ),
                               ),
                             ],
                           );

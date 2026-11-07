@@ -150,36 +150,73 @@ class _WaveSmoothScrollState extends State<WaveSmoothScroll>
     super.dispose();
   }
 
+  ScrollPosition? _resolvePosition() {
+    if (widget.controller != null && widget.controller!.hasClients) {
+      if (widget.controller!.positions.length == 1) {
+        final pos = widget.controller!.position;
+        if (pos.axisDirection == widget.direction) {
+          return pos;
+        }
+      }
+    }
+    final scrollable = Scrollable.maybeOf(context);
+    if (scrollable != null && scrollable.position.hasPixels) {
+      if (scrollable.position.axisDirection == widget.direction) {
+        return scrollable.position;
+      }
+    }
+    final primary = PrimaryScrollController.maybeOf(context);
+    if (primary != null && primary.hasClients && primary.positions.length == 1) {
+      final pos = primary.position;
+      if (pos.axisDirection == widget.direction) {
+        return pos;
+      }
+    }
+    return null;
+  }
+
   void _onTick(Duration elapsed) {
+    if (!mounted) {
+      _stopGliding();
+      return;
+    }
     _lastTickElapsed = elapsed;
-    final position = _activePosition;
+    final position = _activePosition ?? _resolvePosition();
     if (position == null || !position.hasPixels || _targetPixels == null) {
       _stopGliding();
       return;
     }
 
-    final totalDurationMs = widget.duration.inMilliseconds.toDouble();
-    if (totalDurationMs <= 0) {
-      position.jumpTo(_targetPixels!);
-      _stopGliding();
-      return;
-    }
+    try {
+      final totalDurationMs = widget.duration.inMilliseconds.toDouble();
+      if (totalDurationMs <= 0) {
+        final clamped = _targetPixels!.clamp(
+          position.minScrollExtent,
+          position.maxScrollExtent,
+        );
+        position.jumpTo(clamped);
+        _stopGliding();
+        return;
+      }
 
-    final progressMs =
-        (elapsed - _animationStart).inMicroseconds / 1000.0;
-    final t = (progressMs / totalDurationMs).clamp(0.0, 1.0);
-    final curveValue = widget.curve.transform(t);
+      final progressMs =
+          (elapsed - _animationStart).inMicroseconds / 1000.0;
+      final t = (progressMs / totalDurationMs).clamp(0.0, 1.0);
+      final curveValue = widget.curve.transform(t);
 
-    final currentPixels =
-        _startPixels + (_targetPixels! - _startPixels) * curveValue;
-    final clamped = currentPixels.clamp(
-      position.minScrollExtent,
-      position.maxScrollExtent,
-    );
-    position.jumpTo(clamped);
+      final currentPixels =
+          _startPixels + (_targetPixels! - _startPixels) * curveValue;
+      final clamped = currentPixels.clamp(
+        position.minScrollExtent,
+        position.maxScrollExtent,
+      );
+      position.jumpTo(clamped);
 
-    if (t >= 1.0 || (clamped - _targetPixels!).abs() < 0.25) {
-      position.jumpTo(_targetPixels!);
+      if (t >= 1.0 || (clamped - _targetPixels!).abs() < 0.25) {
+        position.jumpTo(clamped);
+        _stopGliding();
+      }
+    } catch (_) {
       _stopGliding();
     }
   }
@@ -213,15 +250,9 @@ class _WaveSmoothScrollState extends State<WaveSmoothScroll>
       return;
     }
 
-    // Only claim the wheel when THIS scrollable can actually move in the
-    // wheel's direction. Registering unconditionally let a non-scrollable
-    // (or shrink-wrapped / edge-pinned) inner list swallow the event, so the
-    // page scrollable behind it never saw it. Unclaimed events fall through
-    // to the next scrollable up the hit-test chain.
-    final controller = widget.controller;
-    if (controller == null || controller.positions.length != 1) return;
-    final position = controller.position;
-    if (!position.hasPixels) return;
+    // Resolve scroll position via controller or surrounding Scrollable/PrimaryScrollController.
+    final position = _resolvePosition();
+    if (position == null || !position.hasPixels) return;
     final atStart = position.pixels <= position.minScrollExtent;
     final atEnd = position.pixels >= position.maxScrollExtent;
     if (position.maxScrollExtent <= position.minScrollExtent) return;

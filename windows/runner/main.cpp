@@ -16,6 +16,13 @@
 
 #include "app_identity.h"
 
+// Request high-performance discrete GPU on laptops with switchable graphics (NVIDIA Optimus / AMD PowerXpress).
+// This prevents Windows from defaulting to power-saving integrated GPU, enabling fluid 120Hz/144Hz VSync.
+extern "C" {
+  __declspec(dllexport) DWORD NvOptimusEnablement = 0x00000001;
+  __declspec(dllexport) int AmdPowerXpressRequestHighPerformance = 1;
+}
+
 // Opt the process into dark Win32 popup menus (tray icon menu, ...).
 //
 // tray_manager shows a raw HMENU via TrackPopupMenu, which renders light
