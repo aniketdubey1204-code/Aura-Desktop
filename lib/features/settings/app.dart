@@ -221,6 +221,10 @@ class _LastWaveAppState extends ConsumerState<LastWaveApp> {
         _ => WaveHazeIntensity.medium,
       },
       liquidGlass: theme.liquidGlass,
+      blurSigma: theme.blurSigma,
+      darkTintAlpha: theme.darkTintAlpha,
+      lightTintAlpha: theme.lightTintAlpha,
+      blurThumbnails: theme.blurThumbnails,
       child: WindowLifecycle(
         child: FluentApp.router(
           title: 'Aura',

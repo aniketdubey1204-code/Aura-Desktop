@@ -1139,7 +1139,242 @@ class _Appearance extends ConsumerWidget {
             ],
           ),
         ),
+        const SizedBox(height: 8),
+        const _BlurControls(),
       ],
+    );
+  }
+}
+
+class _BlurControls extends ConsumerStatefulWidget {
+  const _BlurControls();
+
+  @override
+  ConsumerState<_BlurControls> createState() => _BlurControlsState();
+}
+
+class _BlurControlsState extends ConsumerState<_BlurControls> {
+  double? _dragSigma;
+  double? _dragDarkAlpha;
+  double? _dragLightAlpha;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ref.watch(themeControllerProvider);
+    final currentSigma = _dragSigma ?? theme.blurSigma;
+    final currentDarkAlpha = _dragDarkAlpha ?? theme.darkTintAlpha;
+    final currentLightAlpha = _dragLightAlpha ?? theme.lightTintAlpha;
+
+    return _Group(
+      id: 'appearance.blur_controls',
+      title: 'Frosted Glass & Blur Controls',
+      subtitle:
+          'Customize real-time acrylic blur intensity, translucent tint opacities, and frosted artwork theme',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 1. Blur Intensity (Sigma)
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Blur intensity', style: WaveType.trackTitle),
+                  Text(
+                    'Controls backdrop acrylic frosted glass strength',
+                    style: WaveType.meta.copyWith(color: waveTextSecondary(context)),
+                  ),
+                ],
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                decoration: BoxDecoration(
+                  color: waveSurfaceRaised(context),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: waveDivider(context)),
+                ),
+                child: Text(
+                  currentSigma == 0 ? 'Off (0 px)' : '${currentSigma.round()} px',
+                  style: WaveType.meta.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: waveAccent(context),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Slider(
+            value: currentSigma.clamp(0.0, 50.0),
+            min: 0.0,
+            max: 50.0,
+            onChanged: (v) => setState(() => _dragSigma = v),
+            onChangeEnd: (v) {
+              setState(() => _dragSigma = null);
+              ref.read(themeControllerProvider.notifier).setBlurSigma(v);
+            },
+          ),
+          const SizedBox(height: 6),
+          // Presets for quick selection
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (final (label, val) in const [
+                ('Off (0px)', 0.0),
+                ('Subtle (12px)', 12.0),
+                ('Balanced (26px)', 26.0),
+                ('Deep (38px)', 38.0),
+                ('Ultra (50px)', 50.0),
+              ])
+                MouseRegion(
+                  cursor: SystemMouseCursors.click,
+                  child: GestureDetector(
+                    onTap: () => ref.read(themeControllerProvider.notifier).setBlurSigma(val),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: (currentSigma - val).abs() < 1.0
+                            ? waveAccent(context).withValues(alpha: 0.15)
+                            : waveSurfaceRaised(context),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(
+                          color: (currentSigma - val).abs() < 1.0
+                              ? waveAccent(context)
+                              : waveDivider(context),
+                        ),
+                      ),
+                      child: Text(
+                        label,
+                        style: WaveType.meta.copyWith(
+                          fontSize: 11,
+                          fontWeight: (currentSigma - val).abs() < 1.0
+                              ? FontWeight.w600
+                              : FontWeight.normal,
+                          color: (currentSigma - val).abs() < 1.0
+                              ? waveAccent(context)
+                              : waveTextSecondary(context),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 16),
+
+          // 2. Dark Tint Opacity
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Dark mode tint opacity', style: WaveType.trackTitle),
+                  Text(
+                    'Translucency level of dark frosted glass surfaces',
+                    style: WaveType.meta.copyWith(color: waveTextSecondary(context)),
+                  ),
+                ],
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                decoration: BoxDecoration(
+                  color: waveSurfaceRaised(context),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: waveDivider(context)),
+                ),
+                child: Text(
+                  '${(currentDarkAlpha * 100).round()}%',
+                  style: WaveType.meta.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: waveAccent(context),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Slider(
+            value: currentDarkAlpha.clamp(0.20, 0.95),
+            min: 0.20,
+            max: 0.95,
+            onChanged: (v) => setState(() => _dragDarkAlpha = v),
+            onChangeEnd: (v) {
+              setState(() => _dragDarkAlpha = null);
+              ref.read(themeControllerProvider.notifier).setDarkTintAlpha(v);
+            },
+          ),
+          const SizedBox(height: 16),
+
+          // 3. Light Tint Opacity
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Light mode tint opacity', style: WaveType.trackTitle),
+                  Text(
+                    'Translucency level of light frosted glass surfaces',
+                    style: WaveType.meta.copyWith(color: waveTextSecondary(context)),
+                  ),
+                ],
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                decoration: BoxDecoration(
+                  color: waveSurfaceRaised(context),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: waveDivider(context)),
+                ),
+                child: Text(
+                  '${(currentLightAlpha * 100).round()}%',
+                  style: WaveType.meta.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: waveAccent(context),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Slider(
+            value: currentLightAlpha.clamp(0.20, 0.95),
+            min: 0.20,
+            max: 0.95,
+            onChanged: (v) => setState(() => _dragLightAlpha = v),
+            onChangeEnd: (v) {
+              setState(() => _dragLightAlpha = null);
+              ref.read(themeControllerProvider.notifier).setLightTintAlpha(v);
+            },
+          ),
+          const SizedBox(height: 16),
+
+          // 4. Frosted Thumbnails & Artwork Setting (Default OFF)
+          _SwitchRow(
+            title: 'Frosted artwork & media theme',
+            subtitle:
+                'Turn song thumbnails, album covers, and cards into frosted glass elements with ambient blur backdrops (Off by default)',
+            value: theme.blurThumbnails,
+            onChanged: (v) =>
+                ref.read(themeControllerProvider.notifier).setBlurThumbnails(v),
+          ),
+          const SizedBox(height: 14),
+
+          // 5. Reset button
+          Align(
+            alignment: Alignment.centerRight,
+            child: Button(
+              onPressed: () {
+                ref.read(themeControllerProvider.notifier).resetBlurSettings();
+              },
+              child: const Text('Reset blur to defaults'),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

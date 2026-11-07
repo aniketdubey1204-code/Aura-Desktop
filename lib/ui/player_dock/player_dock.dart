@@ -103,12 +103,16 @@ class WavePlayerDock extends ConsumerWidget {
     final artworkUrl = player.current?.artworkUrl ?? '';
     final dockTint = ref.watch(artworkSeedProvider(artworkUrl)).valueOrNull;
 
+    final darkAlpha = WaveHazeScope.darkTintAlphaOf(context);
+    final lightAlpha = WaveHazeScope.lightTintAlphaOf(context);
+    final blurSigma = WaveHazeScope.blurSigmaOf(context);
+
     final targetBase = () {
       final baseColor = dark
-          ? waveDockTranslucent(context).withValues(alpha: 0.70)
-          : waveSurface(context).withValues(alpha: 0.82);
+          ? waveDockTranslucent(context).withValues(alpha: darkAlpha)
+          : waveSurface(context).withValues(alpha: lightAlpha);
       if (dockTint != null && dark) {
-        return Color.lerp(baseColor, dockTint.withValues(alpha: 0.70), 0.08) ?? baseColor;
+        return Color.lerp(baseColor, dockTint.withValues(alpha: darkAlpha), 0.08) ?? baseColor;
       }
       return baseColor;
     }();
@@ -119,26 +123,55 @@ class WavePlayerDock extends ConsumerWidget {
       curve: Curves.easeOutCubic,
       builder: (context, animatedBase, child) {
         if (compact) {
+          final box = Container(
+            decoration: BoxDecoration(
+              color: animatedBase ?? targetBase,
+              border: Border(
+                top: BorderSide(
+                  color: dark
+                      ? Colors.white.withValues(alpha: 0.10)
+                      : Colors.black.withValues(alpha: 0.08),
+                ),
+              ),
+            ),
+            child: child!,
+          );
+          if (blurSigma <= 0) return box;
           return ClipRect(
             child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: animatedBase ?? targetBase,
-                  border: Border(
-                    top: BorderSide(
-                      color: dark
-                          ? Colors.white.withValues(alpha: 0.10)
-                          : Colors.black.withValues(alpha: 0.08),
-                    ),
-                  ),
-                ),
-                child: child!,
-              ),
+              filter: ImageFilter.blur(sigmaX: blurSigma, sigmaY: blurSigma),
+              child: box,
             ),
           );
         }
         final dockBorderRadius = BorderRadius.circular(18);
+        final content = Container(
+          decoration: BoxDecoration(
+            color: animatedBase ?? targetBase,
+            borderRadius: dockBorderRadius,
+            border: Border.all(
+              color: dark
+                  ? const Color(0xFF2E3547).withValues(alpha: 0.80)
+                  : Colors.black.withValues(alpha: 0.08),
+              width: 1.0,
+            ),
+          ),
+          child: child!,
+        );
+
+        final inner = blurSigma <= 0
+            ? ClipRRect(
+                borderRadius: dockBorderRadius,
+                child: content,
+              )
+            : ClipRRect(
+                borderRadius: dockBorderRadius,
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: blurSigma, sigmaY: blurSigma),
+                  child: content,
+                ),
+              );
+
         return Padding(
           padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
           child: DecoratedBox(
@@ -152,25 +185,7 @@ class WavePlayerDock extends ConsumerWidget {
                 ),
               ],
             ),
-            child: ClipRRect(
-              borderRadius: dockBorderRadius,
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 26, sigmaY: 26),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: animatedBase ?? targetBase,
-                    borderRadius: dockBorderRadius,
-                    border: Border.all(
-                      color: dark
-                          ? const Color(0xFF2E3547).withValues(alpha: 0.80)
-                          : Colors.black.withValues(alpha: 0.08),
-                      width: 1.0,
-                    ),
-                  ),
-                  child: child!,
-                ),
-              ),
-            ),
+            child: inner,
           ),
         );
       },

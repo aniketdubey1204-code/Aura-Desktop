@@ -1,7 +1,10 @@
 import 'dart:io';
+import 'dart:ui';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:fluent_ui/fluent_ui.dart';
+
+import '../theme/haze.dart';
 
 import '../../core/artwork/artwork_resolver.dart';
 import '../../core/artwork/official_artwork_service.dart';
@@ -693,16 +696,44 @@ class _WaveArtworkState extends State<WaveArtwork> {
         },
       ),
     );
+    final frostedThumbnails = WaveHazeScope.blurThumbnailsOf(context);
+
     if (widget.isCircle) {
-      return AnimatedContainer(
+      final circle = AnimatedContainer(
         duration: waveMotion(context, WaveMotion.normal),
         curve: WaveMotion.standard,
         width: widget.size,
         height: widget.size,
         child: ClipOval(child: image),
       );
+      if (!frostedThumbnails || widget.size < 32) return circle;
+      return SizedBox(
+        width: widget.size,
+        height: widget.size,
+        child: Stack(
+          clipBehavior: Clip.none,
+          alignment: Alignment.center,
+          children: [
+            Positioned(
+              left: -3,
+              right: -3,
+              top: -3,
+              bottom: -3,
+              child: ImageFiltered(
+                imageFilter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                child: Opacity(
+                  opacity: dark ? 0.40 : 0.25,
+                  child: ClipOval(child: image),
+                ),
+              ),
+            ),
+            circle,
+          ],
+        ),
+      );
     }
-    return AnimatedContainer(
+
+    final card = AnimatedContainer(
       duration: waveMotion(context, WaveMotion.normal),
       curve: WaveMotion.standard,
       width: widget.size,
@@ -710,6 +741,50 @@ class _WaveArtworkState extends State<WaveArtwork> {
       child: ClipRRect(
         borderRadius: BorderRadius.circular(widget.radius),
         child: image,
+      ),
+    );
+
+    if (!frostedThumbnails || widget.size < 32) return card;
+
+    final radius = BorderRadius.circular(widget.radius);
+    return SizedBox(
+      width: widget.size,
+      height: widget.size,
+      child: Stack(
+        clipBehavior: Clip.none,
+        alignment: Alignment.center,
+        children: [
+          Positioned(
+            left: -4,
+            right: -4,
+            top: -4,
+            bottom: -4,
+            child: ImageFiltered(
+              imageFilter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+              child: Opacity(
+                opacity: dark ? 0.45 : 0.28,
+                child: ClipRRect(
+                  borderRadius: radius,
+                  child: image,
+                ),
+              ),
+            ),
+          ),
+          Container(
+            decoration: BoxDecoration(
+              borderRadius: radius,
+              border: Border.all(
+                color: (dark ? Colors.white : Colors.black)
+                    .withValues(alpha: dark ? 0.16 : 0.08),
+                width: 1,
+              ),
+            ),
+            child: ClipRRect(
+              borderRadius: radius,
+              child: image,
+            ),
+          ),
+        ],
       ),
     );
   }

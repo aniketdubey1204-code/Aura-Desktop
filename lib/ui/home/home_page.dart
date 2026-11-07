@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -31,6 +32,7 @@ import '../components/states.dart';
 import '../navigation/wave_nav.dart';
 import '../podcasts/podcasts_page.dart';
 import '../theme/motion.dart';
+import '../theme/haze.dart';
 import '../theme/tokens.dart';
 import '../theme/wave_icons.dart';
 import 'discovery_sections.dart';
@@ -1278,33 +1280,40 @@ class _FeaturedHero extends ConsumerWidget {
       ],
     );
 
-    if (narrow || upNext.isEmpty) {
-      return Container(
+    final frosted = WaveHazeScope.blurThumbnailsOf(context);
+    final heroBg = dark
+        ? (frosted ? const Color(0xFF141721).withValues(alpha: 0.65) : const Color(0xFF141721))
+        : (frosted ? Colors.white.withValues(alpha: 0.70) : panel);
+
+    Widget heroBox(Widget body) {
+      final box = Container(
         padding: const EdgeInsets.all(22),
         decoration: BoxDecoration(
-          color: dark ? const Color(0xFF141721) : panel,
+          color: heroBg,
           borderRadius: BorderRadius.circular(18),
           border: Border.all(
             color: dark ? const Color(0xFF262C3D) : Colors.black.withValues(alpha: 0.08),
             width: 1.0,
           ),
         ),
-        child: left,
+        child: body,
+      );
+      if (!frosted) return box;
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(18),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+          child: box,
+        ),
       );
     }
 
+    if (narrow || upNext.isEmpty) {
+      return heroBox(left);
+    }
+
     // Wide: 58% featured + divider + 42% up-next stack.
-    return Container(
-      padding: const EdgeInsets.all(22),
-      decoration: BoxDecoration(
-        color: dark ? const Color(0xFF141721) : panel,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: dark ? const Color(0xFF262C3D) : Colors.black.withValues(alpha: 0.08),
-          width: 1.0,
-        ),
-      ),
-      child: Row(
+    return heroBox(Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Expanded(flex: 58, child: left),
@@ -1525,8 +1534,18 @@ class _QuickTileState extends ConsumerState<_QuickTile> {
             color: playing
                 ? accent.withValues(alpha: 0.14)
                 : _hover
-                    ? (dark ? const Color(0xFF1C202C) : Colors.black.withValues(alpha: 0.05))
-                    : (dark ? const Color(0xFF141721) : Colors.white),
+                    ? (dark
+                        ? (WaveHazeScope.blurThumbnailsOf(context)
+                            ? const Color(0xFF1C202C).withValues(alpha: 0.70)
+                            : const Color(0xFF1C202C))
+                        : Colors.black.withValues(alpha: 0.05))
+                    : (dark
+                        ? (WaveHazeScope.blurThumbnailsOf(context)
+                            ? const Color(0xFF141721).withValues(alpha: 0.55)
+                            : const Color(0xFF141721))
+                        : (WaveHazeScope.blurThumbnailsOf(context)
+                            ? Colors.white.withValues(alpha: 0.70)
+                            : Colors.white)),
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
               color: playing

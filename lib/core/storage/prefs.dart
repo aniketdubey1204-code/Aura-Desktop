@@ -421,6 +421,34 @@ class Prefs {
   bool get wavySeekbar => _sp.getBool('lw_wavy_seekbar') ?? false;
   Future<void> setWavySeekbar(bool v) => _sp.setBool('lw_wavy_seekbar', v);
 
+  // -- Dedicated Blur & Frosted Glass Controls -------------------------------
+  /// Blur sigma (0.0 to 50.0). Default is 26.0 px.
+  double get blurSigma => _sp.getDouble('lw_blur_sigma') ?? 26.0;
+  Future<void> setBlurSigma(double v) => _sp.setDouble('lw_blur_sigma', v.clamp(0.0, 60.0));
+
+  /// Dark mode tint opacity (0.20 to 0.95). Default is 0.70 (70%).
+  double get darkTintAlpha => _sp.getDouble('lw_dark_tint_alpha') ?? 0.70;
+  Future<void> setDarkTintAlpha(double v) =>
+      _sp.setDouble('lw_dark_tint_alpha', v.clamp(0.15, 0.98));
+
+  /// Light mode tint opacity (0.20 to 0.95). Default is 0.80 (80%).
+  double get lightTintAlpha => _sp.getDouble('lw_light_tint_alpha') ?? 0.80;
+  Future<void> setLightTintAlpha(double v) =>
+      _sp.setDouble('lw_light_tint_alpha', v.clamp(0.15, 0.98));
+
+  /// Apply frosted glass backdrop / ambient blur theme to song thumbnails and artwork.
+  /// Off by default.
+  bool get blurThumbnails => _sp.getBool('lw_blur_thumbnails') ?? false;
+  Future<void> setBlurThumbnails(bool v) =>
+      _sp.setBool('lw_blur_thumbnails', v);
+
+  Future<void> resetBlurSettings() async {
+    await _sp.setDouble('lw_blur_sigma', 26.0);
+    await _sp.setDouble('lw_dark_tint_alpha', 0.70);
+    await _sp.setDouble('lw_light_tint_alpha', 0.80);
+    await _sp.setBool('lw_blur_thumbnails', false);
+  }
+
   // -- Scrobbler --------------------------------------------------------------
   bool get scrobblerEnabled => _sp.getBool('lw_scrobbler_enabled') ?? false;
   bool get scrobbleNowPlaying => _sp.getBool('lw_submit_now_playing') ?? true;

@@ -26,11 +26,21 @@ class WaveHazeScope extends InheritedWidget {
   /// wider blur. Set from Settings, read by [WaveHaze] / [WaveGlass].
   final bool liquidGlass;
 
+  /// Dedicated Blur & Frosted Glass Controls
+  final double blurSigma;
+  final double darkTintAlpha;
+  final double lightTintAlpha;
+  final bool blurThumbnails;
+
   const WaveHazeScope({
     super.key,
     required this.material,
     required this.intensity,
     this.liquidGlass = false,
+    this.blurSigma = 26.0,
+    this.darkTintAlpha = 0.70,
+    this.lightTintAlpha = 0.80,
+    this.blurThumbnails = false,
     required super.child,
   });
 
@@ -39,13 +49,24 @@ class WaveHazeScope extends InheritedWidget {
         const WaveHazeScope(
           material: WaveMaterialMode.automatic,
           intensity: WaveHazeIntensity.medium,
+          blurSigma: 26.0,
+          darkTintAlpha: 0.70,
+          lightTintAlpha: 0.80,
+          blurThumbnails: false,
           child: SizedBox.shrink(),
         );
   }
 
-  /// Blur is disabled in Solid mode (static tonal fallback everywhere).
-  static bool blurEnabled(BuildContext context) =>
-      of(context).material != WaveMaterialMode.solid;
+  static double blurSigmaOf(BuildContext context) => of(context).blurSigma;
+  static double darkTintAlphaOf(BuildContext context) => of(context).darkTintAlpha;
+  static double lightTintAlphaOf(BuildContext context) => of(context).lightTintAlpha;
+  static bool blurThumbnailsOf(BuildContext context) => of(context).blurThumbnails;
+
+  /// Blur is disabled in Solid mode (static tonal fallback everywhere) or when blurSigma == 0.
+  static bool blurEnabled(BuildContext context) {
+    final scope = of(context);
+    return scope.material != WaveMaterialMode.solid && scope.blurSigma > 0;
+  }
 
   /// Whether [level] may filter on this device/settings combination.
   ///
@@ -55,7 +76,7 @@ class WaveHazeScope extends InheritedWidget {
   /// instead of paying for a faint blur nobody can see.
   static bool allowsBlur(BuildContext context, LwHazeLevel level) {
     final scope = of(context);
-    if (scope.material == WaveMaterialMode.solid) return false;
+    if (scope.material == WaveMaterialMode.solid || scope.blurSigma <= 0) return false;
     if (level == LwHazeLevel.l1 &&
         scope.intensity == WaveHazeIntensity.low) {
       return false;
@@ -63,15 +84,17 @@ class WaveHazeScope extends InheritedWidget {
     return true;
   }
 
-  /// Intensity scales the L1–L3 sigma: low 0.6× · medium 1.0× · high 1.25×.
-  /// L1 skips the filter entirely on low (see [allowsBlur]); the remaining
-  /// levels get the multiplier, which is all `LwHaze` needs.
-  static double blurScale(BuildContext context) =>
-      switch (of(context).intensity) {
-        WaveHazeIntensity.low => 0.6,
-        WaveHazeIntensity.medium => 1.0,
-        WaveHazeIntensity.high => 1.25,
-      };
+  /// Intensity scales the L1–L3 sigma: low 0.6× · medium 1.0× · high 1.25×,
+  /// modulated by the custom blurSigma setting.
+  static double blurScale(BuildContext context) {
+    final scope = of(context);
+    final base = switch (scope.intensity) {
+      WaveHazeIntensity.low => 0.6,
+      WaveHazeIntensity.medium => 1.0,
+      WaveHazeIntensity.high => 1.25,
+    };
+    return base * (scope.blurSigma / 26.0);
+  }
 
   /// Fill multiplier for translucent surfaces: extra translucency keeps 15%
   /// less surface under the blur. 1.0 when the experiment is off.
@@ -87,7 +110,11 @@ class WaveHazeScope extends InheritedWidget {
   bool updateShouldNotify(WaveHazeScope old) =>
       material != old.material ||
       intensity != old.intensity ||
-      liquidGlass != old.liquidGlass;
+      liquidGlass != old.liquidGlass ||
+      blurSigma != old.blurSigma ||
+      darkTintAlpha != old.darkTintAlpha ||
+      lightTintAlpha != old.lightTintAlpha ||
+      blurThumbnails != old.blurThumbnails;
 }
 
 /// Haze material container honouring the user's material setting.

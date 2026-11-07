@@ -5,7 +5,7 @@ import '../../core/storage/prefs.dart';
 import '../../ui/theme/tokens.dart';
 
 /// App theme state (accent + AMOLED + pearl/midnight/custom mode + Haze
-/// prefs).
+/// prefs + blur & frosted controls).
 class ThemeState {
   final Color accent;
   final bool amoled;
@@ -29,6 +29,12 @@ class ThemeState {
   /// Experimental: the dock timeline is drawn as a wave instead of a bar.
   final bool wavySeekbar;
 
+  /// Dedicated Blur & Frosted Glass Controls
+  final double blurSigma;
+  final double darkTintAlpha;
+  final double lightTintAlpha;
+  final bool blurThumbnails;
+
   const ThemeState({
     required this.accent,
     required this.amoled,
@@ -40,6 +46,10 @@ class ThemeState {
     this.accentSource = 'custom',
     this.liquidGlass = false,
     this.wavySeekbar = false,
+    this.blurSigma = 26.0,
+    this.darkTintAlpha = 0.70,
+    this.lightTintAlpha = 0.80,
+    this.blurThumbnails = false,
   });
 
   /// The palette for the Custom theme, or null for Midnight / Pearl.
@@ -66,6 +76,10 @@ class ThemeController extends StateNotifier<ThemeState> {
           accentSource: _prefs.accentSource,
           liquidGlass: _prefs.liquidGlass,
           wavySeekbar: _prefs.wavySeekbar,
+          blurSigma: _prefs.blurSigma,
+          darkTintAlpha: _prefs.darkTintAlpha,
+          lightTintAlpha: _prefs.lightTintAlpha,
+          blurThumbnails: _prefs.blurThumbnails,
         ));
 
   void refresh() {
@@ -80,6 +94,10 @@ class ThemeController extends StateNotifier<ThemeState> {
       accentSource: _prefs.accentSource,
       liquidGlass: _prefs.liquidGlass,
       wavySeekbar: _prefs.wavySeekbar,
+      blurSigma: _prefs.blurSigma,
+      darkTintAlpha: _prefs.darkTintAlpha,
+      lightTintAlpha: _prefs.lightTintAlpha,
+      blurThumbnails: _prefs.blurThumbnails,
     );
   }
 
@@ -93,6 +111,31 @@ class ThemeController extends StateNotifier<ThemeState> {
   Future<void> setCustomBase(Color base) async {
     await _prefs.setCustomThemeBase(base.withValues(alpha: 1).toARGB32());
     await _prefs.setThemeMode('custom');
+    refresh();
+  }
+
+  Future<void> setBlurSigma(double sigma) async {
+    await _prefs.setBlurSigma(sigma);
+    refresh();
+  }
+
+  Future<void> setDarkTintAlpha(double alpha) async {
+    await _prefs.setDarkTintAlpha(alpha);
+    refresh();
+  }
+
+  Future<void> setLightTintAlpha(double alpha) async {
+    await _prefs.setLightTintAlpha(alpha);
+    refresh();
+  }
+
+  Future<void> setBlurThumbnails(bool enabled) async {
+    await _prefs.setBlurThumbnails(enabled);
+    refresh();
+  }
+
+  Future<void> resetBlurSettings() async {
+    await _prefs.resetBlurSettings();
     refresh();
   }
 }
