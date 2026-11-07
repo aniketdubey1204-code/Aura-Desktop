@@ -772,8 +772,17 @@ class _BrowseTileState extends ConsumerState<_BrowseTile> {
           scale: _hover ? 1.05 : 1,
           duration: waveMotion(context, WaveMotion.fast),
           curve: Curves.easeOutCubic,
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(WaveRadius.menu),
+          child: Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: _hover
+                    ? Colors.white.withValues(alpha: 0.45)
+                    : Colors.white.withValues(alpha: 0.12),
+                width: _hover ? 1.5 : 1.0,
+              ),
+            ),
+            clipBehavior: Clip.antiAlias,
             child: Stack(
               fit: StackFit.expand,
               children: [

@@ -208,9 +208,9 @@ class _RailItemState extends State<_RailItem> {
     final dark = waveIsDark(context);
     final accent = waveAccent(context);
     final bg = widget.selected
-        ? (dark ? Colors.white : Colors.black).withValues(alpha: 0.08)
+        ? accent.withValues(alpha: 0.16)
         : _hover
-            ? (dark ? Colors.white : Colors.black).withValues(alpha: 0.04)
+            ? (dark ? Colors.white : Colors.black).withValues(alpha: 0.05)
             : Colors.transparent;
     final fg = widget.selected
         ? (dark ? WaveColors.textPrimary : WaveColors.lightTextPrimary)
@@ -247,11 +247,14 @@ class _RailItemState extends State<_RailItem> {
             padding: EdgeInsets.zero,
             decoration: BoxDecoration(
               color: bg,
-              borderRadius: WaveRadius.controlsRadius,
-              border: hasFocus
+              borderRadius: BorderRadius.circular(10),
+              border: widget.selected
                   ? Border.all(
-                      color: accent.withValues(alpha: 0.6), width: 1)
-                  : Border.all(color: Colors.transparent, width: 1),
+                      color: accent.withValues(alpha: 0.45), width: 1)
+                  : (hasFocus
+                      ? Border.all(
+                          color: accent.withValues(alpha: 0.6), width: 1)
+                      : Border.all(color: Colors.transparent, width: 1)),
             ),
             child: Stack(
               alignment: Alignment.centerLeft,

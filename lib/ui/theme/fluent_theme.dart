@@ -35,17 +35,47 @@ const _controlShape = RoundedRectangleBorder(
   borderRadius: BorderRadius.all(Radius.circular(WaveRadius.controls)),
 );
 
-ButtonThemeData _waveButtonTheme() {
+ButtonThemeData _waveButtonTheme({required Color accent}) {
   ButtonStyle control(ButtonStyle base) => base.copyWith(
-        shape: const WidgetStatePropertyAll(_controlShape),
+        shape: WidgetStateProperty.resolveWith((states) {
+          if (states.isPressed) {
+            return RoundedRectangleBorder(
+              borderRadius:
+                  const BorderRadius.all(Radius.circular(WaveRadius.controls)),
+              side: BorderSide(color: accent, width: 1.5),
+            );
+          }
+          if (states.isHovered) {
+            return RoundedRectangleBorder(
+              borderRadius:
+                  const BorderRadius.all(Radius.circular(WaveRadius.controls)),
+              side: BorderSide(color: accent.withValues(alpha: 0.35), width: 1.0),
+            );
+          }
+          return const RoundedRectangleBorder(
+            borderRadius:
+                BorderRadius.all(Radius.circular(WaveRadius.controls)),
+          );
+        }),
       );
-  // Fluent exposes default/constructor styles; keep them rectangular.
   return ButtonThemeData(
     defaultButtonStyle: control(ButtonStyle()),
     filledButtonStyle: control(ButtonStyle()),
     outlinedButtonStyle: control(ButtonStyle()),
-    iconButtonStyle: const ButtonStyle(
-      shape: WidgetStatePropertyAll(_controlShape),
+    iconButtonStyle: ButtonStyle(
+      shape: WidgetStateProperty.resolveWith((states) {
+        if (states.isPressed) {
+          return RoundedRectangleBorder(
+            borderRadius:
+                const BorderRadius.all(Radius.circular(WaveRadius.controls)),
+            side: BorderSide(color: accent, width: 1.5),
+          );
+        }
+        return const RoundedRectangleBorder(
+          borderRadius:
+              BorderRadius.all(Radius.circular(WaveRadius.controls)),
+        );
+      }),
     ),
   );
 }
@@ -83,7 +113,7 @@ FluentThemeData buildWaveFluentTheme({
   final safeAccent =
       accent.a == 0 ? WaveColors.defaultAccent : accent;
   final accentColor = _accentFrom(safeAccent);
-  final buttonTheme = _waveButtonTheme();
+  final buttonTheme = _waveButtonTheme(accent: safeAccent);
   // AMOLED only ever collapses the *dark* base — light ignores it.
   final surfaces = custom ??
       ((!isLight && amoled) ? WaveSurfaces.amoled : WaveSurfaces.graphite);

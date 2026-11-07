@@ -22,20 +22,20 @@ import 'package:fluent_ui/fluent_ui.dart';
 class WaveColors {
   WaveColors._();
 
-  // Neutral base — true graphite, zero blue.
-  static const background = Color(0xFF0E0E0E);
-  static const backgroundDeep = Color(0xFF0A0A0A);
-  static const surface = Color(0xFF161616);
-  static const surfaceRaised = Color(0xFF1E1E1E);
-  static const surfaceOverlay = Color(0xFF262626);
+  // Neutral base — obsidian slate Aura theme, soft and clean.
+  static const background = Color(0xFF0B0D13);
+  static const backgroundDeep = Color(0xFF08090D);
+  static const surface = Color(0xFF141721);
+  static const surfaceRaised = Color(0xFF1C202C);
+  static const surfaceOverlay = Color(0xFF262B3A);
 
   // Translucent shells painted over Mica.
-  static const panelTranslucent = Color(0xE6161616);
-  static const dockTranslucent = Color(0xF2141414);
-  static const railTranslucent = Color(0xE60E0E0E);
+  static const panelTranslucent = Color(0xE6141721);
+  static const dockTranslucent = Color(0xF211141D);
+  static const railTranslucent = Color(0xE60B0D13);
 
-  static const outline = Color(0xFF2B2B2B);
-  static const outlineSoft = Color(0xFF1F1F1F);
+  static const outline = Color(0xFF262C3D);
+  static const outlineSoft = Color(0xFF1B202D);
 
   static const textPrimary = Color(0xFFF5F4F0);
   static const textSecondary = Color(0xFFA8A6A0);

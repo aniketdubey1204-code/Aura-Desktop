@@ -69,12 +69,26 @@ class _WaveIconButtonState extends State<WaveIconButton> {
             ? WaveColors.textSecondary
             : WaveColors.lightTextSecondary;
       }),
-      shape: const WidgetStatePropertyAll(
-        RoundedRectangleBorder(
+      shape: WidgetStateProperty.resolveWith((states) {
+        if (states.isPressed) {
+          return RoundedRectangleBorder(
+            borderRadius:
+                const BorderRadius.all(Radius.circular(WaveRadius.controls)),
+            side: BorderSide(color: accent, width: 1.5),
+          );
+        }
+        if (states.isHovered) {
+          return RoundedRectangleBorder(
+            borderRadius:
+                const BorderRadius.all(Radius.circular(WaveRadius.controls)),
+            side: BorderSide(color: accent.withValues(alpha: 0.35), width: 1.0),
+          );
+        }
+        return const RoundedRectangleBorder(
           borderRadius:
               BorderRadius.all(Radius.circular(WaveRadius.controls)),
-        ),
-      ),
+        );
+      }),
     );
 
     final button = MouseRegion(
@@ -387,6 +401,11 @@ class _WavePlayPillState extends State<WavePlayPill> {
             decoration: BoxDecoration(
               color: bg,
               borderRadius: BorderRadius.circular(999),
+              border: _pressed
+                  ? Border.all(color: onAccent, width: 2.0)
+                  : (_hover
+                      ? Border.all(color: onAccent.withValues(alpha: 0.5), width: 1.5)
+                      : Border.all(color: Colors.transparent, width: 1.5)),
               boxShadow: [
                 BoxShadow(
                   color: Colors.black
@@ -478,11 +497,23 @@ class _WavePlayButtonState extends State<WavePlayButton> {
                   return accent;
                 }),
                 foregroundColor: WidgetStatePropertyAll(onAccent),
-                shape: const WidgetStatePropertyAll(
-                  RoundedRectangleBorder(
+                shape: WidgetStateProperty.resolveWith((states) {
+                  if (states.isPressed) {
+                    return RoundedRectangleBorder(
+                      borderRadius: const BorderRadius.all(Radius.circular(999)),
+                      side: BorderSide(color: onAccent, width: 2.5),
+                    );
+                  }
+                  if (states.isHovered) {
+                    return RoundedRectangleBorder(
+                      borderRadius: const BorderRadius.all(Radius.circular(999)),
+                      side: BorderSide(color: onAccent.withValues(alpha: 0.6), width: 1.5),
+                    );
+                  }
+                  return const RoundedRectangleBorder(
                     borderRadius: BorderRadius.all(Radius.circular(999)),
-                  ),
-                ),
+                  );
+                }),
               ),
               child: Center(
                 child: widget.buffering

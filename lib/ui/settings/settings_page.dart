@@ -908,14 +908,14 @@ class _EqualizerSettingsSummary extends ConsumerWidget {
 }
 
 const _accentPresets = <Color>[
-  Color(0xFFF5F4F0),
-  Color(0xFF4CC2FF),
-  Color(0xFFE03030),
-  Color(0xFF7C4DFF),
-  Color(0xFF2196C6),
-  Color(0xFF6B9E6B),
-  Color(0xFFE0A030),
-  Color(0xFFE0507A),
+  Color(0xFF06B6D4), // Aura Cyan
+  Color(0xFF6366F1), // Electric Indigo
+  Color(0xFF8B5CF6), // Royal Violet
+  Color(0xFF10B981), // Emerald
+  Color(0xFFF43F5E), // Coral Rose
+  Color(0xFFF59E0B), // Warm Amber
+  Color(0xFF38BDF8), // Sky Blue
+  Color(0xFFF5F4F0), // Crisp Neutral
 ];
 
 class _Appearance extends ConsumerWidget {

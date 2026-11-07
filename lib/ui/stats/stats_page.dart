@@ -500,8 +500,11 @@ class _LastFmProfileHub extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
         color: waveSurface(context),
-        borderRadius: WaveRadius.floatingRadius,
-        border: Border.all(color: waveDivider(context), width: 0.8),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: dark ? const Color(0xFF262C3D) : waveDivider(context),
+          width: 1.0,
+        ),
       ),
       child: Row(
         children: [

@@ -855,6 +855,69 @@ class WaveHomePage extends ConsumerWidget {
 }
 
 /// Greeting header: 24px time-aware greeting + For {username} + date.
+class _MoodChip extends StatefulWidget {
+  final String label;
+  final VoidCallback onTap;
+  const _MoodChip({required this.label, required this.onTap});
+
+  @override
+  State<_MoodChip> createState() => _MoodChipState();
+}
+
+class _MoodChipState extends State<_MoodChip> {
+  bool _hover = false;
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final dark = waveIsDark(context);
+    final accent = waveAccent(context);
+    final bg = _pressed
+        ? accent.withValues(alpha: 0.18)
+        : _hover
+            ? (dark ? Colors.white.withValues(alpha: 0.08) : Colors.black.withValues(alpha: 0.05))
+            : (dark ? const Color(0xFF141721) : const Color(0xFFEDEBE9));
+
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() {
+        _hover = false;
+        _pressed = false;
+      }),
+      child: GestureDetector(
+        onTapDown: (_) => setState(() => _pressed = true),
+        onTapUp: (_) => setState(() => _pressed = false),
+        onTapCancel: () => setState(() => _pressed = false),
+        onTap: widget.onTap,
+        child: AnimatedContainer(
+          duration: waveMotion(context, WaveMotion.fast),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+          decoration: BoxDecoration(
+            color: bg,
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(
+              color: _pressed
+                  ? accent
+                  : (_hover
+                      ? accent.withValues(alpha: 0.4)
+                      : (dark ? const Color(0xFF262C3D) : Colors.black.withValues(alpha: 0.08))),
+              width: _pressed ? 1.5 : 1.0,
+            ),
+          ),
+          child: Text(
+            widget.label,
+            style: WaveType.label.copyWith(
+              fontSize: 11.5,
+              color: _pressed ? accent : (dark ? WaveColors.textPrimary : WaveColors.lightTextPrimary),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _Header extends StatelessWidget {
   final String greeting;
   final String username;
@@ -870,60 +933,80 @@ class _Header extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final dark = waveIsDark(context);
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                username.isNotEmpty ? '$greeting, $username' : greeting,
-                style: WaveType.pageTitle.copyWith(fontSize: 24),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    username.isNotEmpty ? '$greeting, $username' : greeting,
+                    style: WaveType.pageTitle.copyWith(fontSize: 24),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    username.isNotEmpty
+                        ? 'For $username · $date · picked from your taste'
+                        : '$date · picked for you · connect Last.fm for more',
+                    style: WaveType.meta.copyWith(
+                      color: dark
+                          ? WaveColors.textSecondary
+                          : WaveColors.lightTextSecondary,
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 2),
-              Text(
-                username.isNotEmpty
-                    ? 'For $username · $date · picked from your taste'
-                    : '$date · picked for you · connect Last.fm for more',
-                style: WaveType.meta.copyWith(
-                  color: dark
-                      ? WaveColors.textSecondary
-                      : WaveColors.lightTextSecondary,
+            ),
+            WaveGhostButton(
+              label: 'Edit home',
+              icon: WaveIcons.edit,
+              onPressed: () => context.go('/home-layout'),
+            ),
+            if (!signedIn) ...[
+              const SizedBox(width: 8),
+              MouseRegion(
+                cursor: SystemMouseCursors.click,
+                child: GestureDetector(
+                  onTap: () => context.go('/settings?section=lastfm'),
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: dark ? Colors.white : Colors.black,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      'Connect',
+                      style: WaveType.label.copyWith(
+                        color: dark ? Colors.black : Colors.white,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
                 ),
               ),
             ],
-          ),
+          ],
         ),
-        WaveGhostButton(
-          label: 'Edit home',
-          icon: WaveIcons.edit,
-          onPressed: () => context.go('/home-layout'),
-        ),
-        if (!signedIn) ...[
-          const SizedBox(width: 8),
-          MouseRegion(
-            cursor: SystemMouseCursors.click,
-            child: GestureDetector(
-            onTap: () => context.go('/settings?section=lastfm'),
-            child: Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              decoration: BoxDecoration(
-                color: dark ? Colors.white : Colors.black,
-                borderRadius: BorderRadius.circular(999),
-              ),
-              child: Text(
-                'Connect',
-                style: WaveType.label.copyWith(
-                  color: dark ? Colors.black : Colors.white,
-                  fontSize: 12,
+        const SizedBox(height: 14),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: [
+              for (final mood in const ['Chill', 'Focus', 'Energetic', 'Workout']) ...[
+                _MoodChip(
+                  label: mood,
+                  onTap: () => context.go('/search?q=${Uri.encodeComponent(mood.toLowerCase())}'),
                 ),
-              ),
-            ),
+                const SizedBox(width: 8),
+              ],
+            ],
           ),
-          ),
-        ],
+        ),
       ],
     );
   }
@@ -1197,10 +1280,14 @@ class _FeaturedHero extends ConsumerWidget {
 
     if (narrow || upNext.isEmpty) {
       return Container(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(22),
         decoration: BoxDecoration(
-          color: panel,
-          borderRadius: WaveRadius.floatingRadius,
+          color: dark ? const Color(0xFF141721) : panel,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(
+            color: dark ? const Color(0xFF262C3D) : Colors.black.withValues(alpha: 0.08),
+            width: 1.0,
+          ),
         ),
         child: left,
       );
@@ -1208,10 +1295,14 @@ class _FeaturedHero extends ConsumerWidget {
 
     // Wide: 58% featured + divider + 42% up-next stack.
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(22),
       decoration: BoxDecoration(
-        color: panel,
-        borderRadius: WaveRadius.floatingRadius,
+        color: dark ? const Color(0xFF141721) : panel,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: dark ? const Color(0xFF262C3D) : Colors.black.withValues(alpha: 0.08),
+          width: 1.0,
+        ),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
@@ -1376,7 +1467,10 @@ class _RadioPillState extends State<_RadioPill> {
                     ? waveHoverWash(context)
                     : Colors.transparent,
             borderRadius: BorderRadius.circular(999),
-            border: Border.all(color: waveDivider(context)),
+            border: Border.all(
+              color: _pressed ? waveAccent(context) : waveDivider(context),
+              width: _pressed ? 2.0 : 1.0,
+            ),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -1429,12 +1523,19 @@ class _QuickTileState extends ConsumerState<_QuickTile> {
           padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
           decoration: BoxDecoration(
             color: playing
-                ? accent.withValues(alpha: 0.12)
+                ? accent.withValues(alpha: 0.14)
                 : _hover
-                    ? (dark ? Colors.white : Colors.black)
-                        .withValues(alpha: 0.05)
-                    : Colors.transparent,
-            borderRadius: WaveRadius.artworkRadius,
+                    ? (dark ? const Color(0xFF1C202C) : Colors.black.withValues(alpha: 0.05))
+                    : (dark ? const Color(0xFF141721) : Colors.white),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: playing
+                  ? accent.withValues(alpha: 0.5)
+                  : (_hover
+                      ? (dark ? const Color(0xFF262C3D) : Colors.black.withValues(alpha: 0.1))
+                      : (dark ? const Color(0xFF1B202D) : Colors.black.withValues(alpha: 0.05))),
+              width: 1.0,
+            ),
           ),
           child: Row(
             children: [

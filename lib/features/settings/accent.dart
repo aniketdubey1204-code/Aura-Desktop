@@ -17,7 +17,7 @@ enum AccentSource {
 
   /// The brand-neutral off-white ([WaveColors.defaultAccent]) — a
   /// monochrome chrome where only artwork carries hue.
-  lastwave('lastwave', 'LastWave neutral'),
+  lastwave('lastwave', 'Aura neutral'),
 
   /// The desktop environment's accent ([SystemAccent]).
   system('system', 'System accent'),
