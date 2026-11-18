@@ -7,6 +7,12 @@
 **Next-Generation Lossless Music Player with Algorithmic Smart Playlists, Real-Time Synced Lyrics, Cross-Device Continuity & Last.fm Scrobbling.**
 
 <p align="center">
+  <a href="https://aura.aniketdubey.me">
+    <img src="https://img.shields.io/badge/Official_Website-aura.aniketdubey.me-266DF9?style=for-the-badge&logo=googlechrome&logoColor=white&labelColor=202020" alt="Official Website" />
+  </a>
+  <a href="https://github.com/aniketdubey1204-code/Aura-Desktop/stargazers">
+    <img src="https://img.shields.io/github/stars/aniketdubey1204-code/Aura-Desktop?style=for-the-badge&color=ffbc95&labelColor=202020" alt="GitHub Stars" />
+  </a>
   <a href="https://github.com/aniketdubey1204-code/Aura-Desktop/releases">
     <img src="https://img.shields.io/github/v/release/aniketdubey1204-code/Aura-Desktop?style=for-the-badge&color=1DB954&labelColor=202020" alt="Latest Release" />
   </a>
@@ -22,6 +28,16 @@
 </p>
 
 </div>
+
+---
+
+<div align="center">
+  <img src="https://aura.aniketdubey.me/images/desktop-home.png" width="48%" style="border-radius: 12px; margin: 4px;" alt="Aura Desktop Home Library" />
+  <img src="https://aura.aniketdubey.me/images/desktop-player.png" width="48%" style="border-radius: 12px; margin: 4px;" alt="Aura Desktop Synced Lyrics Player" />
+</div>
+
+> [!TIP]
+> **Enjoying Aura Desktop?** Leave a ⭐ star to support development! Get the Android companion app, documentation, and recurring binary updates at [aura.aniketdubey.me](https://aura.aniketdubey.me).
 
 ---
 
